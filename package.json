@@ -5,9 +5,13 @@
   "main": "worker.js",
   "scripts": {
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "dev": "wrangler dev",
+    "preview": "wrangler dev --remote"
   },
   "keywords": ["vms", "license", "device-management", "enterprise"],
   "author": "VMS System",
-  "license": "Proprietary"
+  "license": "Proprietary",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
 }
