@@ -346,7 +346,7 @@ async function runAntiNakalCheck(){
 }
 
 // ========== CLOUD CONFIGURATION ==========
-const CLOUD_URL = "https://vms-command-center.sapammeded.workers.dev";
+const CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
 function isCloudAllowed(){
     return !isDemo();
@@ -1505,7 +1505,7 @@ let lastPayloadHash = "";
 let isBeaconSending = false;
 
 const MAX_QUEUE = 20;
-const CLOUD_URL = "https://vms-command-center.sapammeded.workers.dev";
+const CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
 // ================== HASH ==================
 function hashPayload(p){
@@ -1743,7 +1743,7 @@ console.log("🔥 SUPER PATCH ACTIVE (CLEAN INJECT)");
     if (window.__HYBRID_ORCHESTRATION_LOADED__) return;
     window.__HYBRID_ORCHESTRATION_LOADED__ = true;
 
-    const CLOUD_URL = "https://vms-command-center.sapammeded.workers.dev";
+    const CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
     let currentMode = "DEMO";
     let onlineStatus = true;
     let lastValidSession = null;
@@ -2257,7 +2257,7 @@ console.log("🔥 SUPER PATCH ACTIVE (CLEAN INJECT)");
 // ============================================================
 // 🔥 SYNC FUNCTION (PATCH ONLY)
 // ============================================================
-const SYNC_CLOUD_URL = "https://vms-command-center.sapammeded.workers.dev";
+const SYNC_CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
 async function syncToCloud(payload) {
     try {
@@ -2292,7 +2292,7 @@ async function syncToCloud(payload) {
 }
 </script>
 <script>
-const SYNC_CLOUD_URL = "https://vms-command-center.sapammeded.workers.dev";
+const SYNC_CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
 async function syncToCloud(payload) {
     try {
