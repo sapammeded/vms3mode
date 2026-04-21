@@ -906,7 +906,7 @@ export default {
 
 async function getData(env, key) {
     try {
-        const value = await env.VMS_KV.get(key);
+        const value = await env.VMS_STORAGE.get(key);
         return value ? JSON.parse(value) : (Array.isArray([]) ? [] : {});
     } catch (e) {
         // Fallback untuk development tanpa KV
@@ -927,7 +927,7 @@ async function getData(env, key) {
 
 async function saveData(env, key, data) {
     try {
-        await env.VMS_KV.put(key, JSON.stringify(data));
+        await env.VMS_STORAGE.put(key, JSON.stringify(data));
     } catch (e) {
         console.warn(`KV save ${key} failed:`, e);
     }
