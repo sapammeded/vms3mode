@@ -1,6 +1,6 @@
 // ============================================================
-// VMS COMMAND CENTER - FULL WORKER v7.0
-// 100% COMPATIBLE DENGAN SEMUA HTML
+// VMS COMMAND CENTER - FULL ENTERPRISE v8.0
+// ALL FITUR DARI HTML SUPPORTED
 // ============================================================
 
 export default {
@@ -9,15 +9,15 @@ export default {
         const method = request.method;
 
         const KEYS = {
-            USERS: 'vms_users_v7',
-            COMPANIES: 'vms_companies_v7',
-            DEVICES: 'vms_devices_v7',
-            LICENSES: 'vms_licenses_v7',
-            TOKENS: 'vms_tokens_v7',
-            ACTIVITY: 'vms_activity_v7',
-            INVOICES: 'vms_invoices_v7',
-            SETTINGS: 'vms_settings_v7',
-            DEVICE_REQUESTS: 'vms_device_requests_v7'
+            USERS: 'vms_users_v8',
+            COMPANIES: 'vms_companies_v8',
+            DEVICES: 'vms_devices_v8',
+            LICENSES: 'vms_licenses_v8',
+            TOKENS: 'vms_tokens_v8',
+            ACTIVITY: 'vms_activity_v8',
+            INVOICES: 'vms_invoices_v8',
+            SETTINGS: 'vms_settings_v8',
+            DEVICE_REQUESTS: 'vms_device_requests_v8'
         };
 
         const CORS = {
@@ -62,11 +62,42 @@ export default {
 
         // ==================== ROOT ====================
         if (url.pathname === '/' && method === 'GET') {
-            return res({ status: 'online', version: 'v7.0-COMPLETE', name: 'VMS Command Center' });
+            return res({ status: 'online', version: 'v8.0-FULL', name: 'VMS Command Center' });
         }
 
         // ==================== FORCE INIT ====================
         if (url.pathname === '/force-init' && method === 'POST') {
+            const k = await kv();
+            let users = JSON.parse(await k.get(KEYS.USERS) || '[]');
+            if (users.length === 0) {
+                users = [{
+                    id: 'admin_1',
+                    username: 'admin',
+                    password: await sha256('VMSAdmin2024!'),
+                    role: 'SUPER_ADMIN',
+                    createdAt: Date.now()
+                }];
+                await k.put(KEYS.USERS, JSON.stringify(users));
+            }
+            let settings = JSON.parse(await k.get(KEYS.SETTINGS) || '{}');
+            if (Object.keys(settings).length === 0) {
+                settings = {
+                    pricing: {
+                        DEMO: { price: 0, duration: 7, maxDevices: 2, extraDeviceFee: 0 },
+                        BASIC: { price: 500000, duration: 30, maxDevices: 10, extraDeviceFee: 50000 },
+                        PRO: { price: 2000000, duration: 30, maxDevices: 999, extraDeviceFee: 0 }
+                    },
+                    currency: 'IDR',
+                    tax: 11,
+                    createdAt: Date.now()
+                };
+                await k.put(KEYS.SETTINGS, JSON.stringify(settings));
+            }
+            return res({ ok: true, message: "System initialized" });
+        }
+
+        // ==================== INIT ====================
+        if (url.pathname === '/init' && (method === 'GET' || method === 'POST')) {
             const k = await kv();
             let users = JSON.parse(await k.get(KEYS.USERS) || '[]');
             if (users.length === 0) {
@@ -120,12 +151,9 @@ export default {
             const token = await sha256(username + Date.now() + Math.random());
             const exp = Date.now() + 24 * 60 * 60 * 1000;
             await k.put(`${KEYS.TOKENS}_${token}`, JSON.stringify({
-                username: user.username,
-                role: user.role,
-                userId: user.id,
-                exp
+                username: user.username, role: user.role, userId: user.id, exp
             }));
-            return res({ ok: true, token, role: user.role, username: user.username, expiresIn: 24 * 60 * 60 * 1000 });
+            return res({ ok: true, token, role: user.role, username: user.username, expiresIn: 86400000 });
         }
 
         // ==================== LOGOUT ====================
@@ -204,7 +232,11 @@ export default {
                 devices.push(device);
                 await k.put(KEYS.DEVICES, JSON.stringify(devices));
                 let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
-                activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_REGISTRATION_REQUEST', companyId: company.id, companyName: company.companyName, deviceId, deviceName: deviceName || deviceId, timestamp: Date.now() });
+                activity.unshift({
+                    id: 'act_' + Date.now(), type: 'DEVICE_REGISTRATION_REQUEST',
+                    companyId: company.id, companyName: company.companyName,
+                    deviceId, deviceName: deviceName || deviceId, timestamp: Date.now()
+                });
                 await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
             } else {
                 device.lastSeen = Date.now();
@@ -239,7 +271,11 @@ export default {
             if (!device) return err("Device not found");
             device.status = 'PENDING_APPROVAL';
             device.approvalRequest = { requestedAt: Date.now(), reason: reason || 'New device registration', deviceName: deviceName || device.deviceName };
-            activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_APPROVAL_REQUEST', companyId: device.companyId, companyName: device.companyName, deviceId, deviceName: device.deviceName, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'DEVICE_APPROVAL_REQUEST',
+                companyId: device.companyId, companyName: device.companyName,
+                deviceId, deviceName: device.deviceName, timestamp: Date.now()
+            });
             await k.put(KEYS.DEVICES, JSON.stringify(devices));
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
             return res({ ok: true, message: "Approval request sent to admin" });
@@ -269,7 +305,11 @@ export default {
                     await k.put(KEYS.COMPANIES, JSON.stringify(companies));
                 }
             }
-            activity.unshift({ id: 'act_' + Date.now(), type: approve ? 'DEVICE_APPROVED' : 'DEVICE_REJECTED', companyId: device.companyId, companyName: device.companyName, deviceId, deviceName: device.deviceName, approvedBy: auth.username, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: approve ? 'DEVICE_APPROVED' : 'DEVICE_REJECTED',
+                companyId: device.companyId, companyName: device.companyName,
+                deviceId, deviceName: device.deviceName, approvedBy: auth.username, timestamp: Date.now()
+            });
             await k.put(KEYS.DEVICES, JSON.stringify(devices));
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
             return res({ ok: true, message: `Device ${approve ? 'approved' : 'rejected'}` });
@@ -299,7 +339,12 @@ export default {
                 company.currentDevices = devices.filter(d => d.companyId === company.id && d.deviceId !== deviceId && d.status === 'ACTIVE').length;
                 await k.put(KEYS.COMPANIES, JSON.stringify(companies));
             }
-            activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_DELETED', companyId: device.companyId, companyName: device.companyName, deviceId, deviceName: device.deviceName, deletedBy: auth.username, reason: reason || 'Deleted by admin', timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'DEVICE_DELETED',
+                companyId: device.companyId, companyName: device.companyName,
+                deviceId, deviceName: device.deviceName, deletedBy: auth.username,
+                reason: reason || 'Deleted by admin', timestamp: Date.now()
+            });
             devices.splice(deviceIndex, 1);
             await k.put(KEYS.DEVICES, JSON.stringify(devices));
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
@@ -321,7 +366,11 @@ export default {
             const companyIndex = companies.findIndex(c => c.id === companyId);
             if (companyIndex === -1) return err("Company not found");
             const company = companies[companyIndex];
-            activity.unshift({ id: 'act_' + Date.now(), type: 'COMPANY_DELETED', companyId: company.id, companyName: company.companyName, deletedBy: auth.username, reason: reason || 'No reason provided', timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'COMPANY_DELETED',
+                companyId: company.id, companyName: company.companyName,
+                deletedBy: auth.username, reason: reason || 'No reason provided', timestamp: Date.now()
+            });
             devices = devices.filter(d => d.companyId !== companyId);
             delete licenses[company.licenseKey];
             companies.splice(companyIndex, 1);
@@ -367,7 +416,11 @@ export default {
             await k.put(KEYS.COMPANIES, JSON.stringify(companies));
             await k.put(KEYS.LICENSES, JSON.stringify(licenses));
             let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
-            activity.unshift({ id: 'act_' + Date.now(), type: 'LICENSE_CREATED', companyId: newCompany.id, companyName, details: `License created for ${companyName}`, admin: auth.username, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'LICENSE_CREATED',
+                companyId: newCompany.id, companyName, details: `License created for ${companyName}`,
+                admin: auth.username, timestamp: Date.now()
+            });
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
             return res({ ok: true, licenseKey, company: newCompany });
         }
@@ -497,14 +550,21 @@ export default {
             const device = devices.find(d => d.deviceId === deviceId);
             if (!device) return err("Device not found");
             if (device.status !== 'ACTIVE') return err(`Device status: ${device.status}`);
-            const checkinRecord = { id: 'chk_' + Date.now(), action, timestamp: Date.now(), location: location || null, deviceId, deviceName: device.deviceName };
+            const checkinRecord = {
+                id: 'chk_' + Date.now(), action, timestamp: Date.now(),
+                location: location || null, deviceId, deviceName: device.deviceName
+            };
             if (!device.checkins) device.checkins = [];
             device.checkins.unshift(checkinRecord);
             device.lastCheckin = Date.now();
             device.lastAction = action;
             const company = companies.find(c => c.id === device.companyId);
             if (company) company.metadata.totalCheckins = (company.metadata.totalCheckins || 0) + 1;
-            activity.unshift({ id: 'act_' + Date.now(), type: `CHECK_${action}`, companyId: device.companyId, companyName: device.companyName, deviceId, deviceName: device.deviceName, location, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: `CHECK_${action}`,
+                companyId: device.companyId, companyName: device.companyName,
+                deviceId, deviceName: device.deviceName, location, timestamp: Date.now()
+            });
             await k.put(KEYS.DEVICES, JSON.stringify(devices));
             await k.put(KEYS.COMPANIES, JSON.stringify(companies));
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
@@ -522,7 +582,10 @@ export default {
             let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
             const device = devices.find(d => d.deviceId === deviceId);
             if (!device) return err("Device not found");
-            const violation = { id: 'viol_' + Date.now(), type: violationType, details: details || '', location: location || null, timestamp: Date.now(), deviceId, deviceName: device.deviceName };
+            const violation = {
+                id: 'viol_' + Date.now(), type: violationType, details: details || '',
+                location: location || null, timestamp: Date.now(), deviceId, deviceName: device.deviceName
+            };
             if (!device.violations) device.violations = [];
             device.violations.unshift(violation);
             const recentViolations = device.violations.filter(v => v.timestamp > Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -533,7 +596,11 @@ export default {
             }
             const company = companies.find(c => c.id === device.companyId);
             if (company) company.metadata.totalViolations = (company.metadata.totalViolations || 0) + 1;
-            activity.unshift({ id: 'act_' + Date.now(), type: 'VIOLATION_REPORTED', companyId: device.companyId, companyName: device.companyName, deviceId, deviceName: device.deviceName, violationType, details, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'VIOLATION_REPORTED',
+                companyId: device.companyId, companyName: device.companyName,
+                deviceId, deviceName: device.deviceName, violationType, details, timestamp: Date.now()
+            });
             await k.put(KEYS.DEVICES, JSON.stringify(devices));
             await k.put(KEYS.COMPANIES, JSON.stringify(companies));
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
@@ -567,7 +634,11 @@ export default {
             deviceRequests.unshift(newRequest);
             await k.put(KEYS.DEVICE_REQUESTS, JSON.stringify(deviceRequests.slice(0, 500)));
             let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
-            activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_SUBMITTED', companyId: company.id, companyName: company.companyName, deviceName, fee: extraFee, requestId, timestamp: Date.now() });
+            activity.unshift({
+                id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_SUBMITTED',
+                companyId: company.id, companyName: company.companyName,
+                deviceName, fee: extraFee, requestId, timestamp: Date.now()
+            });
             await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
             return res({ ok: true, requestId, fee: extraFee, message: `Request submitted. Fee: Rp ${extraFee.toLocaleString()}` });
         }
@@ -613,14 +684,24 @@ export default {
                 request.processedAt = Date.now();
                 request.processedBy = auth.username;
                 request.approvalNotes = notes || '';
-                activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_APPROVED', companyId: request.companyId, companyName: request.companyName, deviceName: request.deviceName, invoiceId: invoice.id, amount: request.fee, admin: auth.username, timestamp: Date.now() });
+                activity.unshift({
+                    id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_APPROVED',
+                    companyId: request.companyId, companyName: request.companyName,
+                    deviceName: request.deviceName, invoiceId: invoice.id,
+                    amount: request.fee, admin: auth.username, timestamp: Date.now()
+                });
                 await k.put(KEYS.INVOICES, JSON.stringify(invoices.slice(0, 500)));
             } else {
                 request.status = 'REJECTED';
                 request.processedAt = Date.now();
                 request.processedBy = auth.username;
                 request.rejectionNotes = notes || '';
-                activity.unshift({ id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_REJECTED', companyId: request.companyId, companyName: request.companyName, deviceName: request.deviceName, admin: auth.username, reason: notes || '', timestamp: Date.now() });
+                activity.unshift({
+                    id: 'act_' + Date.now(), type: 'DEVICE_REQUEST_REJECTED',
+                    companyId: request.companyId, companyName: request.companyName,
+                    deviceName: request.deviceName, admin: auth.username,
+                    reason: notes || '', timestamp: Date.now()
+                });
             }
             deviceRequests[reqIndex] = request;
             await k.put(KEYS.DEVICE_REQUESTS, JSON.stringify(deviceRequests));
@@ -850,7 +931,11 @@ export default {
                         }
                     }
                     if (licenses[company.licenseKey]) licenses[company.licenseKey].status = 'EXPIRED';
-                    activity.unshift({ id: 'act_' + Date.now(), type: 'AUTO_BAN_ALL_DEVICES', companyId: company.id, companyName: company.companyName, reason: 'License expired', timestamp: now });
+                    activity.unshift({
+                        id: 'act_' + Date.now(), type: 'AUTO_BAN_ALL_DEVICES',
+                        companyId: company.id, companyName: company.companyName,
+                        reason: 'License expired', timestamp: now
+                    });
                 }
             }
             if (updated) {
