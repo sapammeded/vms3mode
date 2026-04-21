@@ -496,7 +496,23 @@
             <textarea id="deviceMeta" rows="2" placeholder="Device specifications, location, etc."></textarea>
         </div>
         <button class="btn btn-primary btn-block" onclick="registerDevice()">➕ Register Device</button>
+   <hr style="border-color: var(--border); margin: 20px 0;">
+
+<div class="card-header">
+    <h3>💰 Request Additional Device (Fee Applied)</h3>
+</div>
+<div class="grid-2">
+    <div class="form-group">
+        <label>Device Name *</label>
+        <input type="text" id="requestDeviceName" placeholder="e.g., New Security Tablet">
     </div>
+    <div class="form-group">
+        <label>Reason (optional)</label>
+        <input type="text" id="requestReason" placeholder="Why need additional device?">
+    </div>
+</div>
+<button class="btn btn-warning btn-block" onclick="requestAdditionalDevice()">💰 Request Device (Fee)</button>
+ </div>
 
     <!-- My Devices -->
     <div class="card">
@@ -1181,6 +1197,34 @@
     }
 
     init();
+async function requestAdditionalDevice() {
+    const deviceName = document.getElementById("requestDeviceName").value;
+    const reason = document.getElementById("requestReason").value;
+    
+    if (!deviceName) {
+        showToast("Device name required", "error");
+        return;
+    }
+    
+    showToast("Submitting request...", "info");
+    
+    const data = await apiCall("/request-device", {
+        method: "POST",
+        body: JSON.stringify({
+            licenseKey: currentLicense,
+            deviceName: deviceName,
+            reason: reason || "Additional device request"
+        })
+    });
+    
+    if (data && data.ok) {
+        showToast(`Request submitted! Fee: Rp ${data.fee.toLocaleString()}. Wait for admin approval.`, "success");
+        document.getElementById("requestDeviceName").value = "";
+        document.getElementById("requestReason").value = "";
+    } else {
+        showToast(data?.message || "Request failed", "error");
+    }
+}
 </script>
 </body>
 </html>

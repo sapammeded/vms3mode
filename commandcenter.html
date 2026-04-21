@@ -568,6 +568,9 @@
         <div class="nav-item" data-tab="invoices">
             <span>💰</span> Invoices
         </div>
+<div class="nav-item" data-tab="devicerequests">
+    <span>💸</span> Device Requests
+</div>
         <div class="nav-item" data-tab="settings">
             <span>⚙️</span> Settings
         </div>
@@ -813,6 +816,35 @@
                 </div>
             </div>
         </div>
+
+<!-- DEVICE REQUESTS TAB -->
+<div id="devicerequestsTab" class="tab-pane">
+    <div class="card">
+        <div class="card-header">
+            <h3>💸 Device Addition Requests</h3>
+            <div style="display: flex; gap: 12px;">
+                <select id="requestStatusFilter" style="width: 140px;">
+                    <option value="">All</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="WAITING_PAYMENT">Waiting Payment</option>
+                    <option value="PAID">Paid</option>
+                    <option value="REJECTED">Rejected</option>
+                </select>
+                <button class="btn btn-info btn-sm" onclick="loadDeviceRequests()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div class="table-wrapper">
+            <table id="deviceRequestsTable" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Company</th><th>Device Name</th><th>Fee</th><th>Status</th><th>Requested</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
 
         <!-- INVOICES TAB -->
         <div id="invoicesTab" class="tab-pane">
@@ -1167,6 +1199,7 @@
             loadActivity(),
             loadInvoices(),
             loadRecentLicenses()
+loadDeviceRequests()
         ]);
     }
 
@@ -1940,6 +1973,7 @@
         if (tabId === "requests") loadDevices();
         if (tabId === "invoices") loadInvoices();
         if (tabId === "settings") loadAdminUsers();
+        if (tabId === "devicerequests") loadDeviceRequests();
     }
 
     document.querySelectorAll(".nav-item").forEach(nav => {
@@ -1999,6 +2033,80 @@
     }
 
     init();
+// ==================== DEVICE REQUESTS ====================
+async function loadDeviceRequests() {
+    const statusFilter = document.getElementById("requestStatusFilter")?.value || "";
+    const url = "/admin/device-requests" + (statusFilter ? `?status=${statusFilter}` : "");
+    const data = await apiCall(url);
+    if (data && Array.isArray(data)) {
+        renderDeviceRequestsTable(data);
+    }
+}
+
+function renderDeviceRequestsTable(requests) {
+    const tbody = document.querySelector("#deviceRequestsTable tbody");
+    if (!tbody) return;
+    
+    tbody.innerHTML = "";
+    
+    for (const req of requests) {
+        const row = tbody.insertRow();
+        let statusClass = "badge-pending";
+        if (req.status === "WAITING_PAYMENT") statusClass = "badge-warning";
+        if (req.status === "PAID") statusClass = "badge-active";
+        if (req.status === "REJECTED") statusClass = "badge-expired";
+        
+        row.innerHTML = `
+            <td><strong>${escapeHtml(req.companyName)}</strong></td>
+            <td>${escapeHtml(req.deviceName)}</td>
+            <td>Rp ${(req.fee || 0).toLocaleString()}</td>
+            <td><span class="badge ${statusClass}">${req.status}</span></td>
+            <td>${formatDate(req.requestedAt)}</td>
+            <td>
+                ${req.status === "PENDING" ? `
+                    <button class="btn btn-success btn-sm" onclick="approveDeviceRequestFee('${req.id}')">✅ Approve & Invoice</button>
+                    <button class="btn btn-danger btn-sm" onclick="rejectDeviceRequest('${req.id}')">❌ Reject</button>
+                ` : (req.status === "WAITING_PAYMENT" ? `
+                    <span class="text-muted">Waiting client payment</span>
+                ` : (req.status === "PAID" ? `
+                    <span class="text-success">Device activated</span>
+                ` : "-"))}
+            </td>
+        `;
+    }
+}
+
+async function approveDeviceRequestFee(requestId) {
+    if (!confirm("Approve this device request? An invoice will be generated for the client.")) return;
+    
+    const data = await apiCall("/approve-device-request", {
+        method: "POST",
+        body: JSON.stringify({ requestId, approve: true })
+    });
+    
+    if (data && data.ok) {
+        showToast(`Request approved. Invoice: ${data.invoiceId} - Amount: Rp ${data.amount.toLocaleString()}`, "success");
+        loadDeviceRequests();
+        loadInvoices();
+    } else {
+        showToast(data?.error || "Approval failed", "error");
+    }
+}
+
+async function rejectDeviceRequest(requestId) {
+    const reason = prompt("Reason for rejection:");
+    if (reason === null) return;
+    
+    const data = await apiCall("/approve-device-request", {
+        method: "POST",
+        body: JSON.stringify({ requestId, approve: false, notes: reason })
+    });
+    
+    if (data && data.ok) {
+        showToast("Request rejected", "success");
+        loadDeviceRequests();
+    }
+}
 </script>
 </body>
 </html>

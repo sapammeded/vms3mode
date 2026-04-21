@@ -1330,6 +1330,284 @@ export default {
             return res(filtered);
         }
 
+// ==================== REQUEST ADDITIONAL DEVICE (Client) ====================
+if (url.pathname === '/request-device' && method === 'POST') {
+    let body;
+    try {
+        body = await request.json();
+    } catch(e) {
+        return err("Invalid JSON body");
+    }
+    
+    const { licenseKey, deviceName, deviceId, reason } = body;
+    
+    if (!licenseKey || !deviceName) return err("License key and device name required");
+    
+    const k = await kv();
+    let licenses = JSON.parse(await k.get(KEYS.LICENSES) || '{}');
+    let companies = JSON.parse(await k.get(KEYS.COMPANIES) || '[]');
+    let deviceRequests = JSON.parse(await k.get('vms_device_requests_v1') || '[]');
+    
+    const license = licenses[licenseKey];
+    if (!license) return err("Invalid license key", 403);
+    
+    const company = companies.find(c => c.id === license.companyId);
+    if (!company) return err("Company not found", 403);
+    
+    // Hitung biaya tambahan
+    const settings = JSON.parse(await k.get(KEYS.SETTINGS) || '{}');
+    const pricing = settings.pricing || {};
+    const pkgConfig = pricing[company.package];
+    const extraFee = pkgConfig?.extraDeviceFee || 50000;
+    
+    const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+    
+    const newRequest = {
+        id: requestId,
+        companyId: company.id,
+        companyName: company.companyName,
+        licenseKey,
+        deviceName,
+        deviceId: deviceId || 'auto_' + Date.now(),
+        reason: reason || 'Additional device request',
+        status: 'PENDING',
+        fee: extraFee,
+        requestedAt: Date.now(),
+        processedAt: null,
+        processedBy: null
+    };
+    
+    deviceRequests.unshift(newRequest);
+    await k.put('vms_device_requests_v1', JSON.stringify(deviceRequests.slice(0, 500)));
+    
+    // Log activity
+    let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
+    activity.unshift({
+        id: 'act_' + Date.now(),
+        type: 'DEVICE_REQUEST_SUBMITTED',
+        companyId: company.id,
+        companyName: company.companyName,
+        deviceName,
+        fee: extraFee,
+        requestId,
+        timestamp: Date.now()
+    });
+    await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
+    
+    return res({
+        ok: true,
+        requestId,
+        fee: extraFee,
+        message: `Device request submitted. Fee: Rp ${extraFee.toLocaleString()}`
+    });
+}
+
+// ==================== GET DEVICE REQUESTS (Admin) ====================
+if (url.pathname === '/admin/device-requests' && method === 'GET') {
+    const auth = await verify();
+    if (!auth || auth.role !== 'SUPER_ADMIN') return err("Unauthorized", 401);
+    
+    const k = await kv();
+    const requests = JSON.parse(await k.get('vms_device_requests_v1') || '[]');
+    const status = url.searchParams.get('status');
+    
+    let filtered = requests;
+    if (status) filtered = requests.filter(r => r.status === status);
+    
+    return res(filtered);
+}
+
+// ==================== APPROVE DEVICE REQUEST (Admin + Generate Invoice) ====================
+if (url.pathname === '/approve-device-request' && method === 'POST') {
+    const auth = await verify();
+    if (!auth || auth.role !== 'SUPER_ADMIN') return err("Unauthorized", 401);
+    
+    let body;
+    try {
+        body = await request.json();
+    } catch(e) {
+        return err("Invalid JSON body");
+    }
+    
+    const { requestId, approve, notes } = body;
+    
+    const k = await kv();
+    let deviceRequests = JSON.parse(await k.get('vms_device_requests_v1') || '[]');
+    let companies = JSON.parse(await k.get(KEYS.COMPANIES) || '[]');
+    let licenses = JSON.parse(await k.get(KEYS.LICENSES) || '{}');
+    let devices = JSON.parse(await k.get(KEYS.DEVICES) || '[]');
+    let invoices = JSON.parse(await k.get(KEYS.INVOICES) || '[]');
+    let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
+    
+    const requestIndex = deviceRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return err("Request not found");
+    
+    const request = deviceRequests[requestIndex];
+    
+    if (approve) {
+        // Generate invoice
+        const invoice = {
+            id: 'INV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+            companyId: request.companyId,
+            companyName: request.companyName,
+            type: 'ADDITIONAL_DEVICE',
+            deviceName: request.deviceName,
+            amount: request.fee,
+            status: 'UNPAID',
+            createdAt: Date.now(),
+            dueDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
+            requestId: request.id,
+            generatedBy: auth.username
+        };
+        invoices.unshift(invoice);
+        
+        // Update request status
+        request.status = 'WAITING_PAYMENT';
+        request.invoiceId = invoice.id;
+        request.processedAt = Date.now();
+        request.processedBy = auth.username;
+        request.approvalNotes = notes || '';
+        
+        activity.unshift({
+            id: 'act_' + Date.now(),
+            type: 'DEVICE_REQUEST_APPROVED',
+            companyId: request.companyId,
+            companyName: request.companyName,
+            deviceName: request.deviceName,
+            invoiceId: invoice.id,
+            amount: request.fee,
+            admin: auth.username,
+            timestamp: Date.now()
+        });
+    } else {
+        request.status = 'REJECTED';
+        request.processedAt = Date.now();
+        request.processedBy = auth.username;
+        request.rejectionNotes = notes || '';
+        
+        activity.unshift({
+            id: 'act_' + Date.now(),
+            type: 'DEVICE_REQUEST_REJECTED',
+            companyId: request.companyId,
+            companyName: request.companyName,
+            deviceName: request.deviceName,
+            admin: auth.username,
+            reason: notes || '',
+            timestamp: Date.now()
+        });
+    }
+    
+    deviceRequests[requestIndex] = request;
+    
+    await k.put('vms_device_requests_v1', JSON.stringify(deviceRequests));
+    await k.put(KEYS.INVOICES, JSON.stringify(invoices.slice(0, 500)));
+    await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
+    
+    return res({
+        ok: true,
+        status: approve ? 'WAITING_PAYMENT' : 'REJECTED',
+        invoiceId: approve ? invoice.id : null,
+        amount: approve ? request.fee : null,
+        message: approve ? `Request approved. Invoice generated: ${invoice.id}` : 'Request rejected'
+    });
+}
+
+// ==================== PAY DEVICE REQUEST (Client) ====================
+if (url.pathname === '/pay-device-request' && method === 'POST') {
+    let body;
+    try {
+        body = await request.json();
+    } catch(e) {
+        return err("Invalid JSON body");
+    }
+    
+    const { invoiceId, paymentMethod } = body;
+    
+    const k = await kv();
+    let invoices = JSON.parse(await k.get(KEYS.INVOICES) || '[]');
+    let deviceRequests = JSON.parse(await k.get('vms_device_requests_v1') || '[]');
+    let devices = JSON.parse(await k.get(KEYS.DEVICES) || '[]');
+    let companies = JSON.parse(await k.get(KEYS.COMPANIES) || '[]');
+    let licenses = JSON.parse(await k.get(KEYS.LICENSES) || '{}');
+    let activity = JSON.parse(await k.get(KEYS.ACTIVITY) || '[]');
+    
+    const invoiceIndex = invoices.findIndex(i => i.id === invoiceId);
+    if (invoiceIndex === -1) return err("Invoice not found");
+    
+    const invoice = invoices[invoiceIndex];
+    
+    if (invoice.status === 'PAID') return err("Invoice already paid");
+    
+    // Mark invoice as paid
+    invoice.status = 'PAID';
+    invoice.paidAt = Date.now();
+    invoice.paymentMethod = paymentMethod || 'MANUAL';
+    
+    // Find and update request
+    const requestIndex = deviceRequests.findIndex(r => r.id === invoice.requestId);
+    if (requestIndex !== -1) {
+        deviceRequests[requestIndex].status = 'PAID';
+        deviceRequests[requestIndex].paidAt = Date.now();
+        
+        const request = deviceRequests[requestIndex];
+        
+        // Create actual device
+        const newDevice = {
+            deviceId: request.deviceId,
+            deviceName: request.deviceName,
+            companyId: request.companyId,
+            companyName: request.companyName,
+            licenseKey: request.licenseKey,
+            status: 'ACTIVE',
+            firstSeen: Date.now(),
+            lastSeen: Date.now(),
+            meta: {},
+            violations: [],
+            checkins: []
+        };
+        
+        devices.push(newDevice);
+        
+        // Update license device list
+        if (licenses[request.licenseKey]) {
+            licenses[request.licenseKey].devices.push(request.deviceId);
+            await k.put(KEYS.LICENSES, JSON.stringify(licenses));
+        }
+        
+        // Update company device count
+        const company = companies.find(c => c.id === request.companyId);
+        if (company) {
+            company.currentDevices = devices.filter(d => d.companyId === company.id && d.status === 'ACTIVE').length;
+            await k.put(KEYS.COMPANIES, JSON.stringify(companies));
+        }
+        
+        activity.unshift({
+            id: 'act_' + Date.now(),
+            type: 'DEVICE_ACTIVATED',
+            companyId: request.companyId,
+            companyName: request.companyName,
+            deviceId: request.deviceId,
+            deviceName: request.deviceName,
+            invoiceId: invoice.id,
+            amount: invoice.amount,
+            timestamp: Date.now()
+        });
+    }
+    
+    invoices[invoiceIndex] = invoice;
+    
+    await k.put(KEYS.INVOICES, JSON.stringify(invoices));
+    await k.put('vms_device_requests_v1', JSON.stringify(deviceRequests));
+    await k.put(KEYS.DEVICES, JSON.stringify(devices));
+    await k.put(KEYS.ACTIVITY, JSON.stringify(activity.slice(0, 1000)));
+    
+    return res({
+        ok: true,
+        message: "Payment recorded. Device activated successfully.",
+        deviceId: invoice.requestId ? deviceRequests.find(r => r.id === invoice.requestId)?.deviceId : null
+    });
+}
+
         // ==================== FALLBACK ====================
         return err("Endpoint not found", 404);
     }
