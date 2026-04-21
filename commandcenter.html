@@ -1093,29 +1093,55 @@
     }
 
     async function apiCall(endpoint, options = {}) {
-        try {
-            const headers = {
-                "Content-Type": "application/json",
-                ...options.headers
-            };
-            if (token) {
-                headers["x-token"] = token;
-            }
-            const res = await fetch(API_URL + endpoint, {
-                ...options,
-                headers
-            });
-            const data = await res.json();
-            if (res.status === 401) {
-                logout();
-                return null;
-            }
-            return data;
-        } catch (e) {
-            showToast("Network error: " + e.message, "error");
+    try {
+        const headers = {
+            "Content-Type": "application/json",
+            ...options.headers
+        };
+        
+        // 🔥 FIX: Pastikan token dikirim dengan benar
+        const currentToken = token || localStorage.getItem("vms_admin_token");
+        if (currentToken) {
+            headers["x-token"] = currentToken;
+            console.log(`[API_CALL] Using token: ${currentToken.substring(0, 20)}...`);
+        }
+        
+        const url = API_URL + endpoint;
+        console.log(`[API_CALL] ${options.method || 'GET'} ${url}`);
+        
+        const res = await fetch(url, {
+            ...options,
+            headers,
+            credentials: 'omit'  // Hindari CORS issues
+        });
+        
+        console.log(`[API_CALL] Response status: ${res.status}`);
+        
+        // Handle response body
+        let data;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            data = await res.json();
+        } else {
+            const text = await res.text();
+            console.error(`[API_CALL] Non-JSON response: ${text.substring(0, 200)}`);
+            throw new Error('Server returned non-JSON response');
+        }
+        
+        if (res.status === 401) {
+            console.log('[API_CALL] Unauthorized, logging out...');
+            logout();
             return null;
         }
+        
+        return data;
+        
+    } catch (e) {
+        console.error(`[API_CALL] Network error for ${endpoint}:`, e);
+        showToast("Network error: " + e.message, "error");
+        return null;
     }
+}
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
@@ -1143,52 +1169,73 @@
 
     // ==================== LOGIN / LOGOUT ====================
     async function doLogin() {
-        const username = document.getElementById("loginUser").value;
-        const password = document.getElementById("loginPass").value;
-        
-        if (!username || !password) {
-            showToast("Username and password required", "error");
-            return;
-        }
-        
-        showToast("Logging in...", "info");
-        
+    const username = document.getElementById("loginUser").value.trim();
+    const password = document.getElementById("loginPass").value;
+    
+    console.log("[LOGIN] Starting login process...");
+    console.log("[LOGIN] Username:", username);
+    
+    if (!username || !password) {
+        showToast("Username and password required", "error");
+        console.log("[LOGIN] Missing credentials");
+        return;
+    }
+    
+    showToast("Logging in...", "info");
+    
+    try {
+        console.log("[LOGIN] Calling API...");
         const data = await apiCall("/login", {
             method: "POST",
             body: JSON.stringify({ username, password })
         });
         
+        console.log("[LOGIN] API Response:", data);
+        
         if (data && data.ok) {
             token = data.token;
             currentUser = { username: data.username, role: data.role };
+            
             localStorage.setItem("vms_admin_token", token);
             localStorage.setItem("vms_admin_user", data.username);
             localStorage.setItem("vms_admin_role", data.role);
             
-            document.getElementById("loginOverlay").classList.add("hidden");
-            document.getElementById("topUsername").innerText = data.username;
-            document.getElementById("sidebarUsername").innerText = data.username;
-            document.getElementById("topRole").innerText = data.role;
-            document.getElementById("sidebarRole").innerText = data.role;
+            console.log("[LOGIN] Token saved:", token.substring(0, 30) + "...");
+            
+            // Sembunyikan login overlay
+            const loginOverlay = document.getElementById("loginOverlay");
+            const appLayout = document.getElementById("appLayout");
+            
+            if (loginOverlay) loginOverlay.classList.add("hidden");
+            if (appLayout) appLayout.style.display = "flex";
+            
+            // Update UI
+            const topUsername = document.getElementById("topUsername");
+            const sidebarUsername = document.getElementById("sidebarUsername");
+            const topRole = document.getElementById("topRole");
+            const sidebarRole = document.getElementById("sidebarRole");
+            
+            if (topUsername) topUsername.innerText = data.username;
+            if (sidebarUsername) sidebarUsername.innerText = data.username;
+            if (topRole) topRole.innerText = data.role;
+            if (sidebarRole) sidebarRole.innerText = data.role;
             
             showToast(`Welcome ${data.username} (${data.role})`, "success");
+            
+            // Start refresh dan load data
             startRefresh();
             loadAllData();
+            
+            console.log("[LOGIN] Login successful!");
         } else {
-            showToast(data?.error || "Login failed", "error");
+            console.log("[LOGIN] Login failed:", data?.error);
+            showToast(data?.error || "Login failed - please check username/password", "error");
         }
+    } catch (err) {
+        console.error("[LOGIN] Exception:", err);
+        showToast("Login error: " + err.message, "error");
     }
-
-    function logout() {
-        token = null;
-        currentUser = null;
-        localStorage.removeItem("vms_admin_token");
-        localStorage.removeItem("vms_admin_user");
-        localStorage.removeItem("vms_admin_role");
-        if (refreshInterval) clearInterval(refreshInterval);
-        document.getElementById("loginOverlay").classList.remove("hidden");
-        showToast("Logged out", "info");
-    }
+}
 
     // ==================== DATA LOADING ====================
     async function loadAllData() {

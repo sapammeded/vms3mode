@@ -1,12 +1,21 @@
+# wrangler.toml - VMS Command Center v3
 name = "vms-command-center"
 main = "worker.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2025-01-01"
 
+# KV Namespace Binding - WAJIB
 [[kv_namespaces]]
 binding = "VMS_STORAGE"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "f3f4a7c5b73d427d892829d85f47daba"
 
+# Production environment
 [env.production]
 [[env.production.kv_namespaces]]
 binding = "VMS_STORAGE"
-id = "YOUR_PRODUCTION_KV_ID"
+id = "f3f4a7c5b73d427d892829d85f47daba"
+
+# Optional: Untuk development lokal
+[env.dev]
+[[env.dev.kv_namespaces]]
+binding = "VMS_STORAGE"
+id = "f3f4a7c5b73d427d892829d85f47daba"
