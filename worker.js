@@ -1,6 +1,6 @@
 // ==================== VMS WORKER v3.0 - FULL ENTERPRISE SYSTEM ====================
 // Cloudflare Worker untuk VMS SAPAM MEDED
-// Mendukung: Client Portal, Command Center Admin, dan VMS Field Device
+// KV Namespace: VMS_STORAGE
 
 export default {
     async fetch(request, env, ctx) {
@@ -911,17 +911,20 @@ async function getData(env, key) {
     } catch (e) {
         // Fallback untuk development tanpa KV
         console.warn(`KV get ${key} failed:`, e);
-        return key === 'companies' ? [] : 
-               key === 'devices' ? [] :
-               key === 'activities' ? [] :
-               key === 'invoices' ? [] :
-               key === 'device_requests' ? [] :
-               key === 'admins' ? [] :
-               key === 'visitors' ? {} :
-               key === 'logs' ? [] :
-               key === 'anti_nakal_reports' ? [] :
-               key === 'users_from_clients' ? [] :
-               key === 'settings' ? {} : [];
+        const defaultValues = {
+            companies: [],
+            devices: [],
+            activities: [],
+            invoices: [],
+            device_requests: [],
+            admins: [],
+            visitors: {},
+            logs: [],
+            anti_nakal_reports: [],
+            users_from_clients: [],
+            settings: {}
+        };
+        return defaultValues[key] || (key === 'visitors' ? {} : []);
     }
 }
 
