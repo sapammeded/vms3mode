@@ -1,0 +1,12 @@
+name = "vms-command-center"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "VMS_STORAGE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[env.production]
+[[env.production.kv_namespaces]]
+binding = "VMS_STORAGE"
+id = "YOUR_PRODUCTION_KV_ID"

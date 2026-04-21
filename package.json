@@ -1,0 +1,13 @@
+{
+  "name": "vms-command-center",
+  "version": "3.0.0",
+  "description": "VMS Command Center - Enterprise License & Device Management System",
+  "main": "worker.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "keywords": ["vms", "license", "device-management", "enterprise"],
+  "author": "VMS System",
+  "license": "Proprietary"
+}
