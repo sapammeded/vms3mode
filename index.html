@@ -362,30 +362,56 @@ async function hashKey(key){
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0,8);
 }
 
-// 🔥 LICENSE HASH LIST (GANTI INI)
-const VALID_HASH = [
-  "de9bd853",
-  "b7e23ec2",
-  "9f86d081"
-];
+// ============================================================
+// 🔥 LICENSE SYSTEM - VALIDASI KE WORKER (BUKAN HASH LOKAL)
+// ============================================================
 
-async function applyLicenseKey(key){
-
-    const hash = await hashKey(key);
-
-    if(!VALID_HASH.includes(hash)){
-        toast("License salah", "error");
+// Hapus VALID_HASH yang lama, ganti dengan validasi ke Worker
+async function applyLicenseKey(key) {
+    if (!key) {
+        toast("Masukkan license key", "error");
         return;
     }
-
-    LICENSE_MODE = "PRO";
-
-    localStorage.setItem("vms_license", LICENSE_MODE);
-    localStorage.setItem("vms_license_key", key);
-
-    toast("License aktif: PRO", "success");
-
-    applyLicenseUI();
+    
+    toast("Memvalidasi license...", "info");
+    
+    try {
+        const response = await fetch(CLOUD_URL + "/validate-license", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                licenseKey: key,
+                deviceId: localStorage.getItem("vms_device_id"),
+                deviceName: "VMS Field Device"
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data && data.ok) {
+            // License valid dari Worker
+            LICENSE_MODE = data.company?.package || "PRO";
+            localStorage.setItem("vms_license", LICENSE_MODE);
+            localStorage.setItem("vms_license_key", key);
+            
+            // Simpan info company
+            if (data.company) {
+                localStorage.setItem("vms_company", data.company.name || "");
+                localStorage.setItem("vms_max_devices", data.company.maxDevices || 0);
+            }
+            
+            toast(`✅ License aktif: ${LICENSE_MODE}`, "success");
+            applyLicenseUI();
+            
+            // Reload dashboard biar limit berubah
+            if (window.renderDashboard) window.renderDashboard();
+        } else {
+            toast(data?.message || "License tidak valid", "error");
+        }
+    } catch(e) {
+        console.error("License validation error:", e);
+        toast("Gagal memvalidasi license. Periksa koneksi internet.", "error");
+    }
 }
 
 function applyDemoLock(){
