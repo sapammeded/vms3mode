@@ -1,12 +1,14 @@
-// ==================== VMS WORKER v3.0 - FULLY FIXED ====================
+// ==================== VMS WORKER v3.0 - HARDENED PRODUCTION ====================
 // Cloudflare Worker untuk VMS SAPAM MEDED
 // KV Namespace: VMS_STORAGE
 
+// ==================== MAIN HANDLER ====================
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const path = url.pathname;
         
+        // ==================== CORS HEADERS ====================
         const corsHeaders = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -14,12 +16,13 @@ export default {
             'Content-Type': 'application/json'
         };
         
+        // ==================== OPTIONS HANDLER (SAFE CORS) ====================
         if (request.method === 'OPTIONS') {
             return new Response(null, { status: 204, headers: corsHeaders });
         }
         
         try {
-            // ==================== AUTO INIT (FIXED: prevent repeated init) ====================
+            // ==================== AUTO INIT (ANTI LOOP) ====================
             if (!globalThis.__vms_init_done) {
                 let adminsCheck = await getData(env, 'admins');
                 if (!adminsCheck || adminsCheck.length === 0) {
@@ -28,7 +31,7 @@ export default {
                 globalThis.__vms_init_done = true;
             }
             
-            // ==================== FORCE INIT ====================
+            // ==================== FORCE INIT ENDPOINT ====================
             if (path === '/force-init' && request.method === 'POST') {
                 await forceInit(env);
                 return new Response(JSON.stringify({ ok: true, message: 'System initialized' }), { headers: corsHeaders });
@@ -43,7 +46,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN LOGIN (FIXED: token invalidation) ====================
+            // ==================== LOGIN HANDLER (TOKEN INVALIDATION) ====================
             if (path === '/login' && request.method === 'POST') {
                 const body = await request.json();
                 const { username, password } = body;
@@ -118,9 +121,10 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== AUTH MIDDLEWARE (FIXED: token normalization) ====================
+            // ==================== AUTH MIDDLEWARE (TOKEN NORMALIZATION) ====================
             const auth = await checkAuth(request.headers, env);
             
+            // ==================== PROTECTED PATHS ====================
             const protectedPaths = [
                 '/admin/stats', '/admin/companies', '/admin/devices', 
                 '/admin/activity', '/admin/invoices', '/admin/device-requests',
@@ -138,7 +142,8 @@ export default {
                 });
             }
             
-            // ==================== LICENSE VALIDATION ====================
+            // ==================== LICENSE MODULE ====================
+            // Endpoint: /validate-license
             if (path === '/validate-license' && request.method === 'POST') {
                 const body = await request.json();
                 const { licenseKey, deviceId, deviceName, meta } = body;
@@ -214,7 +219,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== CLIENT DEVICES SYNC (NEW ENDPOINT) ====================
+            // ==================== CLIENT DEVICES SYNC ENDPOINT ====================
             if (path === '/client/devices' && request.method === 'POST') {
                 const body = await request.json();
                 const { licenseKey } = body;
@@ -229,7 +234,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, devices: companyDevices }), { headers: corsHeaders });
             }
             
-            // ==================== CHECK-IN / CHECK-OUT ====================
+            // ==================== CHECK-IN / CHECK-OUT MODULE ====================
             if (path === '/checkin' && request.method === 'POST') {
                 const body = await request.json();
                 const { licenseKey, deviceId, action, location } = body;
@@ -268,7 +273,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, activity: activity }), { headers: corsHeaders });
             }
             
-            // ==================== REPORT VIOLATION ====================
+            // ==================== VIOLATION MODULE ====================
             if (path === '/report-violation' && request.method === 'POST') {
                 const body = await request.json();
                 const { licenseKey, deviceId, violationType, details, location } = body;
@@ -329,7 +334,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== REQUEST ADDITIONAL DEVICE ====================
+            // ==================== DEVICE REQUEST MODULE ====================
             if (path === '/request-device' && request.method === 'POST') {
                 const body = await request.json();
                 const { licenseKey, deviceName, reason } = body;
@@ -369,7 +374,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN STATS ====================
+            // ==================== ADMIN STATS MODULE ====================
             if (path === '/admin/stats' && request.method === 'GET') {
                 const companies = await getData(env, 'companies');
                 const devices = await getData(env, 'devices');
@@ -409,13 +414,12 @@ export default {
                 return new Response(JSON.stringify(stats), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN COMPANIES ====================
+            // ==================== ADMIN COMPANY MODULE ====================
             if (path === '/admin/companies' && request.method === 'GET') {
                 const companies = await getData(env, 'companies');
                 return new Response(JSON.stringify(companies), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN COMPANY DETAIL ====================
             if (path.startsWith('/admin/company/') && request.method === 'GET') {
                 const companyId = path.split('/').pop();
                 const companies = await getData(env, 'companies');
@@ -441,13 +445,13 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN DEVICES ====================
+            // ==================== ADMIN DEVICE MODULE ====================
             if (path === '/admin/devices' && request.method === 'GET') {
                 const devices = await getData(env, 'devices');
                 return new Response(JSON.stringify(devices), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN ACTIVITIES ====================
+            // ==================== ADMIN ACTIVITY MODULE ====================
             if (path === '/admin/activity' && request.method === 'GET') {
                 const urlParams = new URL(request.url).searchParams;
                 const limit = parseInt(urlParams.get('limit') || '500');
@@ -455,13 +459,13 @@ export default {
                 return new Response(JSON.stringify(activities.slice(0, limit)), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN INVOICES ====================
+            // ==================== ADMIN INVOICE MODULE ====================
             if (path === '/admin/invoices' && request.method === 'GET') {
                 const invoices = await getData(env, 'invoices');
                 return new Response(JSON.stringify(invoices), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN DEVICE REQUESTS ====================
+            // ==================== ADMIN DEVICE REQUESTS MODULE ====================
             if (path === '/admin/device-requests' && request.method === 'GET') {
                 const urlParams = new URL(request.url).searchParams;
                 const status = urlParams.get('status');
@@ -474,7 +478,7 @@ export default {
                 return new Response(JSON.stringify(requests), { headers: corsHeaders });
             }
             
-            // ==================== APPROVE DEVICE REQUEST ====================
+            // ==================== APPROVE DEVICE REQUEST MODULE ====================
             if (path === '/approve-device-request' && request.method === 'POST') {
                 const body = await request.json();
                 const { requestId, approve, notes } = body;
@@ -521,7 +525,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== GENERATE LICENSE ====================
+            // ==================== GENERATE LICENSE MODULE ====================
             if (path === '/generate-license' && request.method === 'POST') {
                 const body = await request.json();
                 const { companyName, pic, phone, email, address, package: pkg, customMaxDevices, notes } = body;
@@ -569,7 +573,7 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== RENEW LICENSE ====================
+            // ==================== RENEW LICENSE MODULE ====================
             if (path === '/renew-license' && request.method === 'POST') {
                 const body = await request.json();
                 const { companyId, months, amount, paymentMethod } = body;
@@ -606,7 +610,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, company: company, invoice: invoice }), { headers: corsHeaders });
             }
             
-            // ==================== UPDATE PACKAGE ====================
+            // ==================== UPDATE PACKAGE MODULE ====================
             if (path === '/update-package' && request.method === 'POST') {
                 const body = await request.json();
                 const { companyId, newPackage, customMaxDevices, notes } = body;
@@ -631,7 +635,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, company: company }), { headers: corsHeaders });
             }
             
-            // ==================== APPROVE DEVICE ====================
+            // ==================== APPROVE DEVICE MODULE ====================
             if (path === '/approve-device' && request.method === 'POST') {
                 const body = await request.json();
                 const { deviceId, approve } = body;
@@ -659,7 +663,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, device: device }), { headers: corsHeaders });
             }
             
-            // ==================== DELETE DEVICE ====================
+            // ==================== DELETE DEVICE MODULE ====================
             if (path === '/delete-device' && request.method === 'POST') {
                 const body = await request.json();
                 const { deviceId, reason } = body;
@@ -678,7 +682,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
             }
             
-            // ==================== DELETE COMPANY ====================
+            // ==================== DELETE COMPANY MODULE ====================
             if (path === '/delete-company' && request.method === 'POST') {
                 const body = await request.json();
                 const { companyId } = body;
@@ -699,7 +703,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
             }
             
-            // ==================== MARK INVOICE PAID ====================
+            // ==================== MARK INVOICE PAID MODULE ====================
             if (path === '/mark-invoice-paid' && request.method === 'POST') {
                 const body = await request.json();
                 const { invoiceId, paymentMethod } = body;
@@ -751,7 +755,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, invoice: invoice }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN USERS ====================
+            // ==================== ADMIN USERS MODULE ====================
             if (path === '/admin/users' && request.method === 'GET') {
                 const admins = await getData(env, 'admins');
                 const safeAdmins = admins.map(a => ({ username: a.username, role: a.role, lastLogin: a.lastLogin }));
@@ -799,7 +803,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN SETTINGS ====================
+            // ==================== ADMIN SETTINGS MODULE ====================
             if (path === '/admin/settings' && request.method === 'POST') {
                 const body = await request.json();
                 await saveData(env, 'settings', body);
@@ -811,7 +815,7 @@ export default {
                 return new Response(JSON.stringify(settings), { headers: corsHeaders });
             }
             
-            // ==================== SAVE DATA (FROM FIELD DEVICE) ====================
+            // ==================== SYNC MODULE (FIELD DEVICE) ====================
             if (path === '/save' && request.method === 'POST') {
                 const body = await request.json();
                 
@@ -843,7 +847,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
             }
             
-            // ==================== SYNC USERS ====================
+            // ==================== SYNC USERS MODULE ====================
             if (path === '/sync-users' && request.method === 'POST') {
                 const body = await request.json();
                 if (body.users && Array.isArray(body.users)) {
@@ -860,7 +864,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
             }
             
-            // ==================== CRON CHECK EXPIRED ====================
+            // ==================== CRON MODULE ====================
             if (path === '/cron/check-expired' && request.method === 'GET') {
                 const companies = await getData(env, 'companies');
                 const now = Date.now();
@@ -880,7 +884,7 @@ export default {
                 return new Response(JSON.stringify({ ok: true, updated: updated }), { headers: corsHeaders });
             }
             
-            // ==================== 404 ====================
+            // ==================== 404 HANDLER ====================
             return new Response(JSON.stringify({ ok: false, error: 'Endpoint not found: ' + path }), { 
                 status: 404, 
                 headers: corsHeaders 
@@ -896,7 +900,7 @@ export default {
     }
 };
 
-// ==================== HELPER FUNCTIONS ====================
+// ==================== KV STORAGE LAYER ====================
 
 async function forceInit(env) {
     console.log('[FORCE_INIT] Starting initialization...');
@@ -1005,6 +1009,7 @@ async function forceInit(env) {
     }
 }
 
+// ==================== KV GET DATA ====================
 async function getData(env, key) {
     try {
         if (!env || !env.VMS_STORAGE) {
@@ -1030,6 +1035,7 @@ async function getData(env, key) {
     }
 }
 
+// ==================== KV SAVE DATA ====================
 async function saveData(env, key, data) {
     try {
         if (!env || !env.VMS_STORAGE) {
@@ -1049,6 +1055,7 @@ async function saveData(env, key, data) {
     }
 }
 
+// ==================== DEFAULT DATA ====================
 function getDefaultData(key) {
     const defaults = {
         companies: [],
@@ -1077,8 +1084,9 @@ function getDefaultData(key) {
     return key === 'visitors' ? {} : [];
 }
 
-// ==================== AUTH CHECK (FIXED: token normalization) ====================
+// ==================== AUTH CHECK (TOKEN NORMALIZATION) ====================
 async function checkAuth(headers, env) {
+    // FIX: normalize token from multiple header formats
     let token = headers.get('x-token');
     
     if (!token) {
@@ -1100,6 +1108,7 @@ async function checkAuth(headers, env) {
     return null;
 }
 
+// ==================== UTILITY FUNCTIONS ====================
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
 }
