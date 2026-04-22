@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>VMS | Vehicle Management System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #0a0f1a;
+            --primary-light: #111827;
+            --accent: #10b981;
+            --accent-dark: #059669;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --text: #f9fafb;
+            --text-muted: #9ca3af;
+            --border: #1f2937;
+            --card-bg: #1f2937;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--primary);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0a0f1a 0%, #111827 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .logo h1 {
+            font-size: 1.4rem;
+            color: var(--accent);
+        }
+
+        .logo p {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-dark); }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+        .btn-outline:hover { background: var(--border); }
+
+        .hero {
+            text-align: center;
+            padding: 60px 20px;
+            background: linear-gradient(135deg, #10b98110 0%, #05966910 100%);
+            border-radius: 32px;
+            margin-bottom: 40px;
+            border: 1px solid var(--border);
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .hero p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-bottom: 32px;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .feature-card h3 {
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .cta-section {
+            text-align: center;
+            padding: 40px;
+            background: var(--card-bg);
+            border-radius: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .cta-section h2 {
+            margin-bottom: 16px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }
+
+        footer {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+            .hero h1 {
+                font-size: 1.8rem;
+            }
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-content">
+        <div class="logo">
+            <h1>🔐 VMS System</h1>
+            <p>Vehicle Management System Enterprise</p>
+        </div>
+        <div class="nav-buttons">
+            <a href="client-portal.html" class="btn btn-outline">📱 Client Portal</a>
+            <a href="commandcenter.html" class="btn btn-primary">🎯 Command Center</a>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="hero">
+        <h1>Welcome to VMS Enterprise</h1>
+        <p>Complete Vehicle Management System with License Control, Device Monitoring, and Security Features</p>
+        <div class="cta-buttons">
+            <a href="client-portal.html" class="btn btn-outline">📱 Access Client Portal</a>
+            <a href="commandcenter.html" class="btn btn-primary">🎯 Enter Command Center</a>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <h3>📱 Device Management</h3>
+            <p>Register, monitor, and manage all devices connected to your license</p>
+        </div>
+        <div class="feature-card">
+            <h3>🔑 License Control</h3>
+            <p>Enterprise-grade license management with automatic expiry and renewal</p>
+        </div>
+        <div class="feature-card">
+            <h3>⚠️ Security Monitoring</h3>
+            <p>Real-time violation detection and reporting system</p>
+        </div>
+        <div class="feature-card">
+            <h3>📊 Analytics Dashboard</h3>
+            <p>Complete insights and statistics for your organization</p>
+        </div>
+        <div class="feature-card">
+            <h3>💰 Invoice System</h3>
+            <p>Automated invoicing and payment tracking</p>
+        </div>
+        <div class="feature-card">
+            <h3>🛡️ Anti-Fraud</h3>
+            <p>GPS spoofing detection and multiple device prevention</p>
+        </div>
+    </div>
+
+    <div class="cta-section">
+        <h2>Ready to get started?</h2>
+        <p>Access the Command Center for admin tasks or use the Client Portal for device management</p>
+        <div class="cta-buttons">
+            <a href="commandcenter.html" class="btn btn-primary">🎯 Command Center</a>
+            <a href="client-portal.html" class="btn btn-outline">📱 Client Portal</a>
+        </div>
+    </div>
+</div>
+
+<footer>
+    <p>VMS Enterprise System v3.0 | Secure Device Management Platform</p>
+    <p style="margin-top: 8px;">&copy; 2024 VMS - All Rights Reserved</p>
+</footer>
+
+<script>
+    // FIX: sync lock untuk mencegah spam jika ada multiple event
+    if (!window.__vms_index_sync_lock) {
+        window.__vms_index_sync_lock = false;
+    }
+    
+    // Optional: any sync function bisa ditambahkan di sini dengan lock
+    function safeSync(callback) {
+        if (window.__vms_index_sync_lock) return;
+        window.__vms_index_sync_lock = true;
+        try {
+            if (callback) callback();
+        } finally {
+            setTimeout(() => { window.__vms_index_sync_lock = false; }, 1000);
+        }
+    }
+    
+    console.log("VMS Landing Page loaded");
+</script>
+
+</body>
+</html>

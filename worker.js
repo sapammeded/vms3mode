@@ -10,16 +10,25 @@ export default {
         const corsHeaders = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, x-token',
+            'Access-Control-Allow-Headers': 'Content-Type, x-token, authorization, Authorization',
             'Content-Type': 'application/json'
         };
         
         if (request.method === 'OPTIONS') {
-            return new Response(null, { headers: corsHeaders });
+            return new Response(null, { status: 204, headers: corsHeaders });
         }
         
         try {
-            // ==================== FORCE INIT (harus dipanggil pertama kali) ====================
+            // ==================== AUTO INIT (FIXED: prevent repeated init) ====================
+            if (!globalThis.__vms_init_done) {
+                let adminsCheck = await getData(env, 'admins');
+                if (!adminsCheck || adminsCheck.length === 0) {
+                    await forceInit(env);
+                }
+                globalThis.__vms_init_done = true;
+            }
+            
+            // ==================== FORCE INIT ====================
             if (path === '/force-init' && request.method === 'POST') {
                 await forceInit(env);
                 return new Response(JSON.stringify({ ok: true, message: 'System initialized' }), { headers: corsHeaders });
@@ -34,18 +43,27 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== ADMIN LOGIN (FIXED - WORKING VERSION) ====================
+            // ==================== ADMIN LOGIN (FIXED: token invalidation) ====================
             if (path === '/login' && request.method === 'POST') {
                 const body = await request.json();
                 const { username, password } = body;
                 
                 console.log(`[LOGIN] Attempt for username: ${username}`);
                 
-                // Pastikan data admin sudah ada
-                await forceInit(env);
+                let admins = await getData(env, 'admins');
+                if (!admins || !Array.isArray(admins) || admins.length === 0) {
+                    await forceInit(env);
+                    admins = await getData(env, 'admins');
+                }
                 
-                const admins = await getData(env, 'admins');
-                console.log(`[LOGIN] Found ${admins.length} admins in KV`);
+                // FIX: invalidate old token before creating new one
+                admins = admins.map(a => {
+                    if (a.username === username) {
+                        return { ...a, token: null };
+                    }
+                    return a;
+                });
+                await saveData(env, 'admins', admins);
                 
                 const admin = admins.find(a => a.username === username);
                 
@@ -59,29 +77,21 @@ export default {
                 
                 console.log(`[LOGIN] User found: ${admin.username}, role: ${admin.role}`);
                 
-                // 🔥 FIX: Selalu hash password yang dimasukkan
                 const hashedInputPassword = await sha256(password);
-                const storedPassword = admin.password;
+                let storedPassword = admin.password;
                 
-                console.log(`[LOGIN] Hashed input: ${hashedInputPassword.substring(0, 16)}...`);
-                console.log(`[LOGIN] Stored hash: ${storedPassword ? storedPassword.substring(0, 16) : 'null'}...`);
-                
-                // Bandingkan hash
                 let isValid = (hashedInputPassword === storedPassword);
                 
-                // Fallback: Cek apakah stored password masih plain text (untuk migrasi)
                 if (!isValid && storedPassword === password) {
                     console.log(`[LOGIN] Plain text match, upgrading to hash...`);
                     isValid = true;
-                    // Upgrade ke hash
                     admin.password = hashedInputPassword;
+                    storedPassword = admin.password;
                 }
                 
-                // Fallback khusus untuk default admin dengan password 123456
                 if (!isValid && username === 'admin' && password === '123456') {
                     console.log(`[LOGIN] Using default admin fallback`);
                     isValid = true;
-                    // Set hash yang benar
                     admin.password = await sha256('123456');
                 }
                 
@@ -93,13 +103,12 @@ export default {
                     });
                 }
                 
-                // Generate token yang lebih aman
                 const token = 'vms_token_' + Date.now() + '_' + crypto.randomUUID();
                 admin.token = token;
                 admin.lastLogin = Date.now();
                 await saveData(env, 'admins', admins);
                 
-                console.log(`[LOGIN] Success for: ${username}, token generated`);
+                console.log(`[LOGIN] Success for: ${username}`);
                 
                 return new Response(JSON.stringify({
                     ok: true,
@@ -109,17 +118,17 @@ export default {
                 }), { headers: corsHeaders });
             }
             
-            // ==================== AUTH MIDDLEWARE ====================
+            // ==================== AUTH MIDDLEWARE (FIXED: token normalization) ====================
             const auth = await checkAuth(request.headers, env);
             
-            // Endpoint yang butuh auth
             const protectedPaths = [
                 '/admin/stats', '/admin/companies', '/admin/devices', 
                 '/admin/activity', '/admin/invoices', '/admin/device-requests',
                 '/generate-license', '/renew-license', '/update-package',
                 '/approve-device', '/delete-device', '/delete-company',
                 '/mark-invoice-paid', '/admin/users', '/admin/add-user', 
-                '/admin/delete-user', '/admin/settings', '/admin/company/'
+                '/admin/delete-user', '/admin/settings', '/admin/company/',
+                '/approve-device-request'
             ];
             
             if (protectedPaths.some(p => path === p || path.startsWith('/admin/company/')) && !auth) {
@@ -203,6 +212,21 @@ export default {
                     },
                     device: device
                 }), { headers: corsHeaders });
+            }
+            
+            // ==================== CLIENT DEVICES SYNC (NEW ENDPOINT) ====================
+            if (path === '/client/devices' && request.method === 'POST') {
+                const body = await request.json();
+                const { licenseKey } = body;
+                
+                if (!licenseKey) {
+                    return new Response(JSON.stringify({ ok: false, devices: [] }), { headers: corsHeaders });
+                }
+                
+                const devices = await getData(env, 'devices');
+                const companyDevices = devices.filter(d => d.licenseKey === licenseKey && d.status !== 'DELETED');
+                
+                return new Response(JSON.stringify({ ok: true, devices: companyDevices }), { headers: corsHeaders });
             }
             
             // ==================== CHECK-IN / CHECK-OUT ====================
@@ -470,7 +494,6 @@ export default {
                     return new Response(JSON.stringify({ ok: true, request: request }), { headers: corsHeaders });
                 }
                 
-                // Approve: generate invoice
                 const invoices = await getData(env, 'invoices');
                 const invoice = {
                     id: generateId(),
@@ -879,13 +902,18 @@ async function forceInit(env) {
     console.log('[FORCE_INIT] Starting initialization...');
     
     try {
+        // Test KV access first
+        const testKey = '__vms_test__';
+        await env.VMS_STORAGE.put(testKey, 'test');
+        const testVal = await env.VMS_STORAGE.get(testKey);
+        console.log(`[FORCE_INIT] KV test: ${testVal === 'test' ? 'OK' : 'FAILED'}`);
+        
         // ========== INIT ADMINS ==========
         let admins = await getData(env, 'admins');
         
         if (!admins || admins.length === 0) {
             console.log('[FORCE_INIT] No admins found, creating default...');
             
-            // Buat hash untuk password "123456"
             const defaultHash = await sha256('123456');
             console.log(`[FORCE_INIT] Default admin hash: ${defaultHash.substring(0, 20)}...`);
             
@@ -895,7 +923,8 @@ async function forceInit(env) {
                 password: defaultHash,
                 role: 'SUPER_ADMIN',
                 createdAt: Date.now(),
-                createdBy: 'system'
+                createdBy: 'system',
+                token: null
             }];
             
             await saveData(env, 'admins', admins);
@@ -903,7 +932,18 @@ async function forceInit(env) {
         } else {
             console.log(`[FORCE_INIT] Found ${admins.length} existing admins`);
             
-            // 🔥 FIX: Pastikan admin default memiliki hash yang benar
+            let needsSave = false;
+            for (const admin of admins) {
+                if (!admin.token) {
+                    admin.token = null;
+                    needsSave = true;
+                }
+            }
+            if (needsSave) {
+                await saveData(env, 'admins', admins);
+                console.log('[FORCE_INIT] Updated admin records with missing fields');
+            }
+            
             const defaultAdmin = admins.find(a => a.username === 'admin');
             if (defaultAdmin) {
                 const expectedHash = await sha256('123456');
@@ -934,22 +974,24 @@ async function forceInit(env) {
             console.log('[FORCE_INIT] Default settings created');
         }
         
-        // ========== INIT EMPTY ARRAYS ==========
-        const emptyCollections = ['companies', 'devices', 'activities', 'invoices', 'device_requests'];
-        for (const collection of emptyCollections) {
+        // ========== INIT EMPTY COLLECTIONS ==========
+        const collections = {
+            arrays: ['companies', 'devices', 'activities', 'invoices', 'device_requests', 'logs', 'anti_nakal_reports', 'users_from_clients'],
+            objects: ['visitors']
+        };
+        
+        for (const collection of collections.arrays) {
             const data = await getData(env, collection);
-            if (!data || data.length === undefined) {
-                console.log(`[FORCE_INIT] Initializing empty array for: ${collection}`);
+            if (!data || !Array.isArray(data)) {
+                console.log(`[FORCE_INIT] Initializing array for: ${collection}`);
                 await saveData(env, collection, []);
             }
         }
         
-        // ========== INIT EMPTY OBJECTS ==========
-        const emptyObjects = ['visitors'];
-        for (const collection of emptyObjects) {
+        for (const collection of collections.objects) {
             const data = await getData(env, collection);
-            if (!data) {
-                console.log(`[FORCE_INIT] Initializing empty object for: ${collection}`);
+            if (!data || typeof data !== 'object') {
+                console.log(`[FORCE_INIT] Initializing object for: ${collection}`);
                 await saveData(env, collection, {});
             }
         }
@@ -1035,8 +1077,17 @@ function getDefaultData(key) {
     return key === 'visitors' ? {} : [];
 }
 
+// ==================== AUTH CHECK (FIXED: token normalization) ====================
 async function checkAuth(headers, env) {
-    const token = headers.get('x-token');
+    let token = headers.get('x-token');
+    
+    if (!token) {
+        const authHeader = headers.get('authorization') || headers.get('Authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        }
+    }
+    
     if (!token) return null;
     
     const admins = await getData(env, 'admins');
