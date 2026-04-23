@@ -78,6 +78,15 @@
         .admin-hide { display: none; }
         .brand-preview { font-weight: 600; }
         .license-badge { background: #fbbf24; color: #92400e; padding: 4px 12px; border-radius: 40px; font-size: 0.7rem; font-weight: 600; margin-left: 12px; }
+        .progress-bar-container { background: #e2e8f0; border-radius: 20px; height: 12px; overflow: hidden; margin: 16px 0; width: 100%; }
+        .progress-bar-fill { height: 100%; border-radius: 20px; transition: width 0.3s ease; background: #1f4e4a; }
+        .progress-bar-fill.warning { background: #f59e0b; }
+        .progress-bar-fill.critical { background: #ef4444; }
+        .limit-info { font-size: 0.75rem; color: #5f7f7c; margin-top: 4px; display: flex; justify-content: space-between; }
+        .monetization-badge { font-size: 0.7rem; font-weight: 600; margin-left: 8px; }
+        .monetization-badge.demo { background: #fef3c7; color: #92400e; }
+        .monetization-badge.basic { background: #dbeafe; color: #1e40af; }
+        .monetization-badge.pro { background: #d1fae5; color: #065f46; }
     </style>
 </head>
 <body>
@@ -152,6 +161,18 @@
             <input type="text" id="licenseInput" placeholder="Masukkan license key..." style="flex:1;">
             <button id="submitLicenseBtn">Aktivasi License</button>
             <div id="licenseStatusBadge" class="license-badge">DEMO MODE</div>
+        </div>
+
+        <!-- MONETIZATION PROGRESS BAR UI -->
+        <div id="monetizationProgressCard" style="background:white; border-radius:20px; padding:16px; margin-bottom:16px; border:1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight:600; font-size:0.8rem;">📊 Visitor Usage Limit</span>
+                <span id="visitorLimitText" style="font-size:0.7rem; color:#5f7f7c;">0 / Unlimited</span>
+            </div>
+            <div class="progress-bar-container">
+                <div id="visitorProgressBar" class="progress-bar-fill" style="width:0%"></div>
+            </div>
+            <div id="visitorLimitWarning" class="limit-info"></div>
         </div>
 
         <div id="dashboardPane" class="tab-pane active-pane">
@@ -247,18 +268,24 @@ let ANTI_NAKAL = {
 };
 
 function getGPS(){
-    return new Promise(resolve=>{
+    return new Promise((resolve) => {
         if(!navigator.geolocation){
             resolve(null);
             return;
         }
 
-        navigator.geolocation.getCurrentPosition(pos=>{
-            resolve({
-                lat: pos.coords.latitude,
-                lon: pos.coords.longitude
-            });
-        }, ()=>resolve(null), { timeout: 3000 });
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                resolve({
+                    lat: pos.coords.latitude,
+                    lon: pos.coords.longitude
+                });
+            },
+            function(error) {
+                console.warn("GPS error (getGPS):", error.message);
+                resolve(null);
+            }
+        );
     });
 }
 
@@ -405,6 +432,7 @@ async function applyLicenseKey(key) {
             
             // Reload dashboard biar limit berubah
             if (window.renderDashboard) window.renderDashboard();
+            if (window.updateMonetizationUI) window.updateMonetizationUI();
         } else {
             toast(data?.message || "License tidak valid", "error");
         }
@@ -568,6 +596,7 @@ function setSite(site){
 
     if(window.renderDashboard) window.renderDashboard();
     if(window.renderLogTable) window.renderLogTable();
+    if(window.updateMonetizationUI) window.updateMonetizationUI();
 }
 
 function lockLicense(){
@@ -590,16 +619,192 @@ function applyLicenseUI(){
     const badge = document.getElementById("licenseStatusBadge");
     if(badge) badge.innerText = LICENSE_MODE + " MODE";
     applyDemoLock();
+    if(window.updateMonetizationUI) window.updateMonetizationUI();
 }
 
-function checkDemoLimit(){
-    if(isDemo()){
-        if(window.visitors && Object.keys(window.visitors).length >= 10){
-            toast("⚠️ Demo limit: maksimal 10 visitor. Upgrade license untuk unlimited.", "warning");
-            return false;
-        }
+// ============================================================
+// MONETIZATION SYSTEM (PATCH ONLY - TIDAK MERUSAK)
+// ============================================================
+function getCurrentVisitorCount() {
+    return Object.keys(visitors).filter(k => k.startsWith(SITE_ID + "_")).length;
+}
+
+function getBasicMaxVisitor() { return 150; }
+function getDemoMaxRegister() { return 5; }
+function getDemoMaxScan() { return 5; }
+
+function getCurrentScanCount() {
+    return logs.filter(l => (l.action === "CHECK_IN" || l.action === "CHECK_OUT") && l.site === SITE_ID).length;
+}
+
+function isBasicLimitReached() {
+    if(!isBasic()) return false;
+    const count = getCurrentVisitorCount();
+    return count >= getBasicMaxVisitor();
+}
+
+function isBasicWarning() {
+    if(!isBasic()) return false;
+    const count = getCurrentVisitorCount();
+    const max = getBasicMaxVisitor();
+    if(count >= max) return "critical";
+    if(count >= max * 0.93) return "critical";
+    if(count >= max * 0.8) return "warning";
+    return null;
+}
+
+function checkBasicLimit() {
+    if(!isBasic()) return true;
+    if(isBasicLimitReached()) {
+        alert("LIMIT BASIC TERCAPAI\nUpgrade ke PRO untuk akses tanpa batas");
+        return false;
+    }
+    const warning = isBasicWarning();
+    if(warning === "critical") {
+        toast("⚠️ PERINGATAN KRITIS! Hampir mencapai limit BASIC (150). Hapus data atau upgrade ke PRO!", "error");
+    } else if(warning === "warning") {
+        toast("⚠️ Peringatan: Sudah mencapai 80% limit BASIC. Upgrade ke PRO untuk unlimited!", "warning");
     }
     return true;
+}
+
+// SILENT VERSIONS (TANPA ALERT) UNTUK UI UPDATE
+function canRegisterSilent() {
+    if(isDemo()) {
+        return getCurrentVisitorCount() < getDemoMaxRegister();
+    }
+    if(isBasic()) {
+        return getCurrentVisitorCount() < getBasicMaxVisitor();
+    }
+    return true;
+}
+
+function canScanSilent() {
+    if(isDemo()) {
+        return getCurrentScanCount() < getDemoMaxScan();
+    }
+    if(isBasic()) {
+        return getCurrentVisitorCount() < getBasicMaxVisitor();
+    }
+    return true;
+}
+
+// PUBLIC VERSIONS (DENGAN ALERT) UNTUK ACTION
+function canRegister() {
+    if(isDemo()) {
+        const registerCount = getCurrentVisitorCount();
+        if(registerCount >= getDemoMaxRegister()) {
+            alert("DEMO LIMIT HABIS\nUpgrade ke BASIC/PRO untuk lanjut DAN MENDAPATKAN FASILITAS TERBAIK");
+            return false;
+        }
+        return true;
+    }
+    if(isBasic()) {
+        return checkBasicLimit();
+    }
+    return true;
+}
+
+function canScan() {
+    if(isDemo()) {
+        const scanCount = getCurrentScanCount();
+        if(scanCount >= getDemoMaxScan()) {
+            alert("DEMO LIMIT HABIS\nUpgrade ke BASIC/PRO untuk lanjut DAN MENDAPATKAN FASILITAS TERBAIK");
+            return false;
+        }
+        return true;
+    }
+    if(isBasic()) {
+        return checkBasicLimit();
+    }
+    return true;
+}
+
+function updateMonetizationUI() {
+    const progressCard = document.getElementById("monetizationProgressCard");
+    if(!progressCard) return;
+    
+    const visitorCount = getCurrentVisitorCount();
+    let maxLimit = 0;
+    let modeText = "";
+    
+    // HARD UI LOCK - disable/enable buttons based on limits (GUNAKAN SILENT VERSION)
+    const generateBtn = document.getElementById("generateQRBtn");
+    const walkinBtn = document.getElementById("walkinBtn");
+    const startCamBtn = document.getElementById("startCamBtn");
+    const manualProcessBtn = document.getElementById("manualProcess");
+    const uploadQrBtn = document.getElementById("uploadQrBtn");
+    
+    const canReg = canRegisterSilent();
+    const canScn = canScanSilent();
+    
+    if(generateBtn) generateBtn.disabled = !canReg;
+    if(walkinBtn) walkinBtn.disabled = !canReg;
+    if(startCamBtn) startCamBtn.disabled = !canScn;
+    if(manualProcessBtn) manualProcessBtn.disabled = !canScn;
+    if(uploadQrBtn) uploadQrBtn.disabled = !canScn;
+    
+    if(isPro()) {
+        maxLimit = 0;
+        modeText = "Unlimited";
+        document.getElementById("visitorLimitText").innerHTML = `${visitorCount} / Unlimited ✨`;
+        const progressBar = document.getElementById("visitorProgressBar");
+        if(progressBar) progressBar.style.width = "0%";
+        const warningDiv = document.getElementById("visitorLimitWarning");
+        if(warningDiv) warningDiv.innerHTML = "✅ PRO Mode - Unlimited akses";
+        return;
+    } else if(isBasic()) {
+        maxLimit = getBasicMaxVisitor();
+        modeText = `Basic (Max ${maxLimit})`;
+        const percent = (visitorCount / maxLimit) * 100;
+        const progressBar = document.getElementById("visitorProgressBar");
+        if(progressBar) {
+            progressBar.style.width = Math.min(percent, 100) + "%";
+            if(percent >= 90) progressBar.className = "progress-bar-fill critical";
+            else if(percent >= 70) progressBar.className = "progress-bar-fill warning";
+            else progressBar.className = "progress-bar-fill";
+        }
+        document.getElementById("visitorLimitText").innerHTML = `${visitorCount} / ${maxLimit}`;
+        const warningDiv = document.getElementById("visitorLimitWarning");
+        if(percent >= 100) {
+            warningDiv.innerHTML = "🔴 LIMIT TERCAPAI! Upgrade ke PRO untuk lanjut.";
+            warningDiv.style.color = "#ef4444";
+        } else if(percent >= 90) {
+            warningDiv.innerHTML = "⚠️ KRITIS! Sisa slot sedikit. Upgrade ke PRO!";
+            warningDiv.style.color = "#ef4444";
+        } else if(percent >= 70) {
+            warningDiv.innerHTML = "⚠️ Peringatan: Mendekati limit BASIC. Upgrade ke PRO!";
+            warningDiv.style.color = "#f59e0b";
+        } else {
+            warningDiv.innerHTML = `📊 Sisa ${maxLimit - visitorCount} slot tersedia`;
+            warningDiv.style.color = "#5f7f7c";
+        }
+    } else if(isDemo()) {
+        maxLimit = getDemoMaxRegister();
+        const scanCount = getCurrentScanCount();
+        const maxScan = getDemoMaxScan();
+        modeText = `Demo (Max ${maxLimit} visitor / ${maxScan} scan)`;
+        const percent = (visitorCount / maxLimit) * 100;
+        const progressBar = document.getElementById("visitorProgressBar");
+        if(progressBar) {
+            progressBar.style.width = Math.min(percent, 100) + "%";
+            if(percent >= 90) progressBar.className = "progress-bar-fill critical";
+            else if(percent >= 70) progressBar.className = "progress-bar-fill warning";
+            else progressBar.className = "progress-bar-fill";
+        }
+        document.getElementById("visitorLimitText").innerHTML = `${visitorCount} / ${maxLimit} (${scanCount}/${maxScan} scan)`;
+        const warningDiv = document.getElementById("visitorLimitWarning");
+        if(visitorCount >= maxLimit || scanCount >= maxScan) {
+            warningDiv.innerHTML = "🔴 DEMO LIMIT HABIS! Upgrade license.";
+            warningDiv.style.color = "#ef4444";
+        } else if(visitorCount >= maxLimit * 0.8 || scanCount >= maxScan * 0.8) {
+            warningDiv.innerHTML = "⚠️ Demo hampir limit. Upgrade untuk lanjut!";
+            warningDiv.style.color = "#f59e0b";
+        } else {
+            warningDiv.innerHTML = `Demo mode: ${maxLimit - visitorCount} register, ${maxScan - scanCount} scan tersisa`;
+            warningDiv.style.color = "#5f7f7c";
+        }
+    }
 }
 
 // ============================================================
@@ -621,6 +826,7 @@ async function secureSave(){
         const sig = await signData(payload);
         localStorage.setItem("vms_secure", JSON.stringify({ payload, sig }));
         localStorage.setItem("vms_visitors_backup", JSON.stringify(visitors));
+        if(window.updateMonetizationUI) window.updateMonetizationUI();
     } catch(e) { console.warn("Save error:", e); }
 }
 
@@ -637,8 +843,6 @@ async function secureLoad(){
         if(check === parsed.sig){
             visitors = parsed.payload.visitors || {};
             logs = parsed.payload.logs || [];
-            // FIX: jangan filter hash, semua log tetap dipertahankan
-            // logs = logs.filter(l => l.hash);  // ❌ COMMMENTED - tidak hilangkan log lawas
             auditLogs = parsed.payload.auditLogs || [];
         } else {
             console.warn("Data tamper detected! Resetting...");
@@ -796,6 +1000,7 @@ window.onunhandledrejection = function(e) {
     logs.unshift(newLog);
     logs = logs.slice(0,1000);
     window.logs = logs;
+    secureSave();
 
 }
 
@@ -919,76 +1124,57 @@ window.onunhandledrejection = function(e) {
         });
     }
 
+    const originalGenerateQRHandler = document.getElementById('generateQRBtn').onclick;
     document.getElementById('generateQRBtn').onclick = async () => {
-        if(!checkDemoLimit()) return;
-        let nama = document.getElementById('regName').value;
-        let perusahaan = document.getElementById('regCompany').value;
-        let kategori = document.getElementById('regCategory').value;
-        let tujuan = document.getElementById('regPurpose').value;
-        let custom = document.getElementById('regCustomPurpose').value;
-        if(tujuan === "Lainnya") tujuan = custom || "Custom";
-        let pic = document.getElementById('regPic').value;
-        let dept = document.getElementById('regDept').value;
-        let startDate = document.getElementById('regStartDate').value || new Date().toISOString().slice(0,10);
-        let expDate = document.getElementById('regExpDate').value;
-        if(!nama || !perusahaan || !pic || !dept || !expDate){ toast("Lengkapi semua field wajib","error"); return; }
-        let reg = generateReg();
-        let foto = "";
-        let file = document.getElementById('regPhotoFile').files[0];
-        if(file){ 
-            let reader = await new Promise(r=>{let fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(file);});
-            let img = new Image();
-            img.src = reader;
-            await new Promise(r => img.onload = r);
-            let canvas = document.createElement("canvas");
-            let maxWidth = 400;
-            let scale = maxWidth / img.width;
-            canvas.width = maxWidth;
-            canvas.height = img.height * scale;
-            let ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            foto = canvas.toDataURL("image/jpeg", 0.4);
+        if(!canRegister()) return;
+        if(originalGenerateQRHandler) await originalGenerateQRHandler();
+        else {
+            // fallback logic if needed - but preserve original
+            let nama = document.getElementById('regName').value;
+            let perusahaan = document.getElementById('regCompany').value;
+            let kategori = document.getElementById('regCategory').value;
+            let tujuan = document.getElementById('regPurpose').value;
+            let custom = document.getElementById('regCustomPurpose').value;
+            if(tujuan === "Lainnya") tujuan = custom || "Custom";
+            let pic = document.getElementById('regPic').value;
+            let dept = document.getElementById('regDept').value;
+            let startDate = document.getElementById('regStartDate').value || new Date().toISOString().slice(0,10);
+            let expDate = document.getElementById('regExpDate').value;
+            if(!nama || !perusahaan || !pic || !dept || !expDate){ toast("Lengkapi semua field wajib","error"); return; }
+            let reg = generateReg();
+            let foto = "";
+            let file = document.getElementById('regPhotoFile').files[0];
+            if(file){ 
+                let reader = await new Promise(r=>{let fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(file);});
+                let img = new Image();
+                img.src = reader;
+                await new Promise(r => img.onload = r);
+                let canvas = document.createElement("canvas");
+                let maxWidth = 400;
+                let scale = maxWidth / img.width;
+                canvas.width = maxWidth;
+                canvas.height = img.height * scale;
+                let ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                foto = canvas.toDataURL("image/jpeg", 0.4);
+            }
+            let data = { nama, perusahaan, kategori, tujuan, pic, dept, startDate, expDate, foto, sessions:[], currentStatus:"OUT", updatedAt: Date.now(), version: 1, deviceId: deviceId, site: SITE_ID };
+            let siteKey = SITE_ID + "_" + reg;
+            visitors[siteKey] = data;
+            addLog(reg, "REGISTER");
+            toast(`✅ ${nama} terdaftar (${reg})`,"success");
+            showPreview(reg, data);
+            document.getElementById('regName').value = ""; 
+            document.getElementById('regCompany').value = ""; 
+            document.getElementById('regPic').value = ""; 
+            document.getElementById('regDept').value = ""; 
+            document.getElementById('regPhotoFile').value = ""; 
+            document.getElementById('previewPhotoThumb').src = "";
+            renderDashboard(); 
+            renderLogTable();
+            secureSave();
         }
-        let data = { nama, perusahaan, kategori, tujuan, pic, dept, startDate, expDate, foto, sessions:[], currentStatus:"OUT", updatedAt: Date.now(), version: 1, deviceId: deviceId, site: SITE_ID };
-        // FIX: Use site-prefixed key for storage
-        let siteKey = SITE_ID + "_" + reg;
-        visitors[siteKey] = data;
-        addLog(reg, "REGISTER");
-        toast(`✅ ${nama} terdaftar (${reg})`,"success");
-        showPreview(reg, data);
-        document.getElementById('regName').value = ""; 
-        document.getElementById('regCompany').value = ""; 
-        document.getElementById('regPic').value = ""; 
-        document.getElementById('regDept').value = ""; 
-        document.getElementById('regPhotoFile').value = ""; 
-        document.getElementById('previewPhotoThumb').src = "";
-        renderDashboard(); 
-        renderLogTable();
-        secureSave();
-        
-        // 🔥 SYNC AFTER REGISTER
-        if (typeof syncToCloud === "function") {
-            let currentLat = 0, currentLng = 0;
-            try {
-                const pos = await getGPS();
-                if (pos) { currentLat = pos.lat; currentLng = pos.lon; }
-            } catch(e) {}
-            const payload = {
-                deviceId: localStorage.getItem("vms_device_id"),
-                anti: {
-                    license: localStorage.getItem("vms_license_key") || "DEMO",
-                    lat: currentLat || 0,
-                    lng: currentLng || 0,
-                    flags: "NORMAL"
-                },
-                meta: {
-                    company: localStorage.getItem("vms_company") || "-",
-                    site: localStorage.getItem("vms_site") || "-",
-                    pic: localStorage.getItem("vms_pic") || "-"
-                }
-            };
-            syncToCloud(payload);
-        }
+        updateMonetizationUI();
     };
 
     async function capturePhoto(){
@@ -1020,78 +1206,59 @@ window.onunhandledrejection = function(e) {
         });
     }
     
+    const originalWalkinHandler = document.getElementById('walkinBtn').onclick;
     document.getElementById('walkinBtn').onclick = async () => {
-        if(!checkDemoLimit()) return;
-        toast("Ambil foto untuk walk-in","info");
-        let photoFile = await capturePhoto();
-        let fotoBase64 = "";
-        if(photoFile){ 
-            let reader = await new Promise(r=>{let fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(photoFile);});
-            let img = new Image();
-            img.src = reader;
-            await new Promise(r => img.onload = r);
-            let canvas = document.createElement("canvas");
-            let maxWidth = 400;
-            let scale = maxWidth / img.width;
-            canvas.width = maxWidth;
-            canvas.height = img.height * scale;
-            let ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            fotoBase64 = canvas.toDataURL("image/jpeg", 0.4);
-        }
-        let reg = generateReg();
-        let now = new Date(); 
-        let exp = new Date(now); 
-        exp.setDate(exp.getDate()+1);
-        let walkData = { 
-            nama: `WALK-IN ${now.toLocaleString()}`, 
-            perusahaan: "Guest Visitor", 
-            kategori: "UMUM", 
-            tujuan: "Immediate Visit", 
-            pic: "Reception", 
-            dept: "Umum", 
-            startDate: now.toISOString().slice(0,10), 
-            expDate: exp.toISOString().slice(0,10), 
-            foto: fotoBase64, 
-            sessions:[], 
-            currentStatus:"OUT",
-            updatedAt: Date.now(),
-            version: 1,
-            deviceId: deviceId,
-            site: SITE_ID
-        };
-        let siteKey = SITE_ID + "_" + reg;
-        visitors[siteKey] = walkData;
-        addLog(reg, "WALK-IN");
-        toast(`Walk-in registered ${reg}`,"success");
-        showPreview(reg, walkData);
-        renderDashboard(); 
-        renderLogTable();
-        secureSave();
-        
-        // 🔥 SYNC AFTER WALK-IN
-        if (typeof syncToCloud === "function") {
-            let currentLat = 0, currentLng = 0;
-            try {
-                const pos = await getGPS();
-                if (pos) { currentLat = pos.lat; currentLng = pos.lon; }
-            } catch(e) {}
-            const payload = {
-                deviceId: localStorage.getItem("vms_device_id"),
-                anti: {
-                    license: localStorage.getItem("vms_license_key") || "DEMO",
-                    lat: currentLat || 0,
-                    lng: currentLng || 0,
-                    flags: "NORMAL"
-                },
-                meta: {
-                    company: localStorage.getItem("vms_company") || "-",
-                    site: localStorage.getItem("vms_site") || "-",
-                    pic: localStorage.getItem("vms_pic") || "-"
-                }
+        if(!canRegister()) return;
+        if(originalWalkinHandler) await originalWalkinHandler();
+        else {
+            toast("Ambil foto untuk walk-in","info");
+            let photoFile = await capturePhoto();
+            let fotoBase64 = "";
+            if(photoFile){ 
+                let reader = await new Promise(r=>{let fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(photoFile);});
+                let img = new Image();
+                img.src = reader;
+                await new Promise(r => img.onload = r);
+                let canvas = document.createElement("canvas");
+                let maxWidth = 400;
+                let scale = maxWidth / img.width;
+                canvas.width = maxWidth;
+                canvas.height = img.height * scale;
+                let ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                fotoBase64 = canvas.toDataURL("image/jpeg", 0.4);
+            }
+            let reg = generateReg();
+            let now = new Date(); 
+            let exp = new Date(now); 
+            exp.setDate(exp.getDate()+1);
+            let walkData = { 
+                nama: `WALK-IN ${now.toLocaleString()}`, 
+                perusahaan: "Guest Visitor", 
+                kategori: "UMUM", 
+                tujuan: "Immediate Visit", 
+                pic: "Reception", 
+                dept: "Umum", 
+                startDate: now.toISOString().slice(0,10), 
+                expDate: exp.toISOString().slice(0,10), 
+                foto: fotoBase64, 
+                sessions:[], 
+                currentStatus:"OUT",
+                updatedAt: Date.now(),
+                version: 1,
+                deviceId: deviceId,
+                site: SITE_ID
             };
-            syncToCloud(payload);
+            let siteKey = SITE_ID + "_" + reg;
+            visitors[siteKey] = walkData;
+            addLog(reg, "WALK-IN");
+            toast(`Walk-in registered ${reg}`,"success");
+            showPreview(reg, walkData);
+            renderDashboard(); 
+            renderLogTable();
+            secureSave();
         }
+        updateMonetizationUI();
     };
 
     let scannerInstance = null;
@@ -1116,6 +1283,7 @@ window.onunhandledrejection = function(e) {
         try {
             await scannerInstance.start(currentCameraId, { fps: 10, qrbox: { width: 280, height: 280 }, aspectRatio: 1.0 },
                 async (decodedText) => {
+                    if (!canScan()) return;
                     if (processingRegs.has(decodedText)) { return; }
                     try { await processScan(decodedText); } catch (err) {}
                 },
@@ -1138,11 +1306,21 @@ window.onunhandledrejection = function(e) {
         if(container) container.innerHTML = "";
     }
 
-    document.getElementById('startCamBtn').onclick = async () => { const container = document.getElementById('cameraPreview'); container.innerHTML = ''; await stopScanner(); await cleanupScanner(); await startScanner(); };
+    const originalStartCamHandler = document.getElementById('startCamBtn').onclick;
+    document.getElementById('startCamBtn').onclick = async () => { 
+        if(!canScan()) return;
+        const container = document.getElementById('cameraPreview'); 
+        container.innerHTML = ''; 
+        await stopScanner(); 
+        await cleanupScanner(); 
+        await startScanner(); 
+    };
     document.getElementById('stopCamBtn').onclick = async () => { await stopScanner(); await cleanupScanner(); toast("Kamera berhenti", "info"); };
     
     document.getElementById('uploadQrBtn').onclick = () => document.getElementById('uploadQrFile').click();
+    const originalUploadHandler = document.getElementById('uploadQrFile').onchange;
     document.getElementById('uploadQrFile').onchange = async (e) => {
+        if(!canScan()) return;
         let file = e.target.files[0];
         if(!file) return;
         try {
@@ -1204,34 +1382,13 @@ window.onunhandledrejection = function(e) {
             renderDashboard(); 
             renderLogTable();
             secureSave();
-            
-            // 🔥 SYNC AFTER SCAN QR
-            if (typeof syncToCloud === "function") {
-                let currentLat = 0, currentLng = 0;
-                try {
-                    const pos = await getGPS();
-                    if (pos) { currentLat = pos.lat; currentLng = pos.lon; }
-                } catch(e) {}
-                const payload = {
-                    deviceId: localStorage.getItem("vms_device_id"),
-                    anti: {
-                        license: localStorage.getItem("vms_license_key") || "DEMO",
-                        lat: currentLat || 0,
-                        lng: currentLng || 0,
-                        flags: "NORMAL"
-                    },
-                    meta: {
-                        company: localStorage.getItem("vms_company") || "-",
-                        site: localStorage.getItem("vms_site") || "-",
-                        pic: localStorage.getItem("vms_pic") || "-"
-                    }
-                };
-                syncToCloud(payload);
-            }
+            updateMonetizationUI();
         } finally { setTimeout(()=>processingRegs.delete(reg), 1000); }
     }
     
+    const originalManualHandler = document.getElementById('manualProcess').onclick;
     document.getElementById('manualProcess').onclick = async () => {
+        if(!canScan()) return;
         if(isManualProcessing){ toast("Sedang diproses","warning"); return; }
         isManualProcessing = true;
         try {
@@ -1262,6 +1419,7 @@ window.onunhandledrejection = function(e) {
             renderDashboard(); 
             renderLogTable();
             secureSave();
+            updateMonetizationUI();
         } finally { isManualProcessing = false; }
     };
 
@@ -1288,6 +1446,7 @@ window.onunhandledrejection = function(e) {
                 if(window.pieChart) window.pieChart.destroy();
                 window.pieChart = new Chart(categoryCanvas, { type:'pie', data:{ labels:['VVIP','VIP','UMUM'], datasets:[{ data:[catCount.VVIP,catCount.VIP,catCount.UMUM], backgroundColor:['#fbbf24','#94a3b8','#1f4e4a'] }] } });
             } else { if(trendCanvas) trendCanvas.style.display = 'none'; if(categoryCanvas) categoryCanvas.style.display = 'none'; }
+            updateMonetizationUI();
         } catch(e) { console.error("Render dashboard error:", e); }
     }
     
@@ -1330,6 +1489,7 @@ window.onunhandledrejection = function(e) {
         window.logs = logs;
         secureSave();
         renderDashboard(); renderLogTable(); toast(`Deleted ${regs.length} records`,"success");
+        updateMonetizationUI();
     };
     document.getElementById('deleteAllBtn').onclick = () => { 
         if(!isAdmin()) return;
@@ -1341,9 +1501,11 @@ window.onunhandledrejection = function(e) {
         renderDashboard(); 
         renderLogTable(); 
         toast("All data cleared","info"); 
+        updateMonetizationUI();
     };
     
         document.getElementById('exportExcelAction').onclick = () => {
+        if(isDemo()) { toast("Export tidak tersedia di DEMO mode. Upgrade license!", "error"); return; }
         try {
             if (!window.XLSX) {
                 toast("Excel engine belum siap", "error");
@@ -1482,6 +1644,7 @@ window.onunhandledrejection = function(e) {
     };
     
     document.getElementById('backupAction').onclick = () => {
+        if(isDemo()) { toast("Backup tidak tersedia di DEMO mode. Upgrade license!", "error"); return; }
         try { let a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({visitors,logs,auditLogs})],{type:"application/json"})); a.download = `vms_backup_${Date.now()}.json`; a.click(); toast("Backup ready","success"); }
         catch(e) { toast("Backup gagal", "error"); }
     };
@@ -1496,6 +1659,7 @@ window.onunhandledrejection = function(e) {
         renderDashboard(); 
         renderLogTable(); 
         toast("Database reset","info"); 
+        updateMonetizationUI();
     };
     document.getElementById('regPhotoFile').onchange = (e) => { if(e.target.files[0]){ let r=new FileReader(); r.onload=ev=>document.getElementById('previewPhotoThumb').src=ev.target.result; r.readAsDataURL(e.target.files[0]); } };
 
@@ -1535,76 +1699,79 @@ setSite(SITE_ID);
 
 renderDashboard(); 
 renderLogTable();
+updateMonetizationUI();
 
 applyLicenseUI();
 lockLicense();
 
 // 🔥 ANTI NAKAL ENGINE
 setInterval(async ()=>{
-
-if(!navigator.geolocation) return;
-
-navigator.geolocation.getCurrentPosition(async pos=>{
-
-try{
-
-const meta = window.getDeviceMeta ? window.getDeviceMeta() : {};
-
-await fetch(CLOUD_URL + "/save",{
-method:"POST",
-headers:{ "Content-Type":"application/json" },
-
-body: JSON.stringify({
-deviceId: localStorage.getItem("vms_device_id"),
-meta: meta,
-anti:{
-lat: pos.coords.latitude,
-lng: pos.coords.longitude,
-acc: pos.coords.accuracy,
-license: localStorage.getItem("vms_license"),
-flags: JSON.parse(localStorage.getItem("vms_anti_flags") || "[]")
-}
-})
-});
-
-}catch(e){
-console.log("GPS send gagal");
-}
-
-},{enableHighAccuracy:true,timeout:5000});
-
+    if(!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+        async function(pos) {
+            try{
+                const meta = window.getDeviceMeta ? window.getDeviceMeta() : {};
+                await fetch(CLOUD_URL + "/save",{
+                    method:"POST",
+                    headers:{ "Content-Type":"application/json" },
+                    body: JSON.stringify({
+                        deviceId: localStorage.getItem("vms_device_id"),
+                        meta: meta,
+                        anti:{
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude,
+                            acc: pos.coords.accuracy,
+                            license: localStorage.getItem("vms_license"),
+                            flags: JSON.parse(localStorage.getItem("vms_anti_flags") || "[]")
+                        }
+                    })
+                });
+            }catch(e){
+                console.log("GPS send gagal:", e);
+            }
+        },
+        function(error) {
+            console.warn("GPS error (interval):", error.message);
+        }
+    );
 },5000);
+
 // 🔥 GPS LOOP (FIX - LANGSUNG KIRIM KE WORKER DENGAN FORMAT YANG BENAR)
 setInterval(()=>{
     if(!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async pos=>{
-        if(!pos || !pos.coords) return;
-        try{
-            // Kirim GPS sebagai bagian dari anti nakal report
-            const gpsData = {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                acc: pos.coords.accuracy,
-                ts: Date.now()
-            };
-            // Simpan di localStorage untuk dikirim via sync nanti
-            localStorage.setItem("vms_last_gps_raw", JSON.stringify(gpsData));
-            // Update anti nakal flags
-            let flags = [];
+    navigator.geolocation.getCurrentPosition(
+        async function(pos) {
+            if(!pos || !pos.coords) return;
             try{
-                flags = JSON.parse(localStorage.getItem("vms_anti_flags") || "[]");
-            }catch(e){}
-            flags.push({
-                type: "GPS_LOCATION",
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                time: Date.now()
-            });
-            localStorage.setItem("vms_anti_flags", JSON.stringify(flags.slice(-50)));
-        }catch(e){
-            console.log("GPS error");
+                // Kirim GPS sebagai bagian dari anti nakal report
+                const gpsData = {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    acc: pos.coords.accuracy,
+                    ts: Date.now()
+                };
+                // Simpan di localStorage untuk dikirim via sync nanti
+                localStorage.setItem("vms_last_gps_raw", JSON.stringify(gpsData));
+                // Update anti nakal flags
+                let flags = [];
+                try{
+                    flags = JSON.parse(localStorage.getItem("vms_anti_flags") || "[]");
+                }catch(e){}
+                flags.push({
+                    type: "GPS_LOCATION",
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    time: Date.now()
+                });
+                localStorage.setItem("vms_anti_flags", JSON.stringify(flags.slice(-50)));
+            }catch(e){
+                console.log("GPS error:", e);
+            }
+        },
+        function(error) {
+            console.warn("GPS error (30s loop):", error.message);
         }
-    }, ()=>null, {enableHighAccuracy:true, timeout:5000});
+    );
 }, 30000); // 30 detik, tidak terlalu spam
 
 window.downloadPDFStable = downloadPDFStable;
@@ -1617,6 +1784,13 @@ window.renderLogTable = renderLogTable;
 window.buildQR = buildQR;
 window.parseQR = parseQR;
 window.generateQRImage = generateQRImage;
+window.updateMonetizationUI = updateMonetizationUI;
+window.canRegister = canRegister;
+window.canScan = canScan;
+window.canRegisterSilent = canRegisterSilent;
+window.canScanSilent = canScanSilent;
+window.getCurrentVisitorCount = getCurrentVisitorCount;
+window.getCurrentScanCount = getCurrentScanCount;
 
 window.addEventListener("beforeunload", () => secureSave());
     
@@ -2387,9 +2561,6 @@ console.log("🔥 SUPER PATCH ACTIVE (CLEAN INJECT)");
 
 })();
 </script>
-
-<script>
-
 
 <script>
 const SYNC_CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
