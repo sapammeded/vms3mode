@@ -1360,10 +1360,8 @@ window.onunhandledrejection = function(e) {
                         let durationText = "-"; let statusText = "IN PROGRESS";
                         if (session.checkIn && session.checkOut) { const durationMinutes = Math.floor((session.checkOut - session.checkIn) / 60000); durationText = durationMinutes.toString(); statusText = "COMPLETED"; }
                         else if (session.checkIn && !session.checkOut) { durationText = "IN PROGRESS"; statusText = "IN PROGRESS"; }
-                        dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": idx + 1, "Check-In": formatDateTime(checkInDate), "Check-Out": formatDateTime(checkOutDate), "Durasi (menit)": durationText, "Status": statusText, "Masa Berlaku": visitor.expDate || "-" });
-                    });
-                } else { dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": "-", "Check-In": "-", "Check-Out": "-", "Durasi (menit)": "-", "Status": "TERDAFTAR (Belum ada aktivitas)", "Masa Berlaku": visitor.expDate || "-" }); }
-            });
+                        dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": idx + 1, "Check-In": formatDateTime(checkInDate), "Check-Out": formatDateTime(checkOutDate), "Durasi (menit)": durationText, "Status": statusText, "Masa Berlaku": visitor.expDate || "-", "Keterangan": "-" });
+                } else { dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": "-", "Check-In": "-", "Check-Out": "-", "Durasi (menit)": "-", "Status": "TERDAFTAR (Belum ada aktivitas)", "Masa Berlaku": visitor.expDate || "-", "Keterangan": "-" });
             const ws = XLSX.utils.json_to_sheet(dataForExcel);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "VMS_Audit_Log_Sessions");
