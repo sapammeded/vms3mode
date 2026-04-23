@@ -1343,31 +1343,142 @@ window.onunhandledrejection = function(e) {
         toast("All data cleared","info"); 
     };
     
-    document.getElementById('exportExcelAction').onclick = () => {
+        document.getElementById('exportExcelAction').onclick = () => {
         try {
-            if(!window.XLSX){ toast("Excel engine belum siap", "error"); return; }
+            if (!window.XLSX) {
+                toast("Excel engine belum siap", "error");
+                return;
+            }
+
             const dataForExcel = [];
+
             Object.entries(visitors).forEach(([siteKey, visitor]) => {
+                if (!siteKey.startsWith(SITE_ID + "_")) return;
 
-    if(!siteKey.startsWith(SITE_ID + "_")) return;
+                const reg = siteKey.replace(SITE_ID + "_", "");
+                const now = new Date();
+                const expDate = visitor.expDate ? new Date(visitor.expDate) : null;
+                
+                let masaBerlakuStatus = "";
+                let keterangan = "";
+                
+                if (expDate) {
+                    if (expDate < now) {
+                        masaBerlakuStatus = "❌ EXPIRED";
+                        keterangan = "QR Code sudah kadaluarsa";
+                    } else {
+                        const daysLeft = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
+                        masaBerlakuStatus = `✅ AKTIF (sisa ${daysLeft} hari)`;
+                        keterangan = `Berlaku hingga ${visitor.expDate}`;
+                    }
+                } else {
+                    masaBerlakuStatus = "⚠️ TIDAK DITENTUKAN";
+                    keterangan = "Tanggal kadaluarsa tidak diisi";
+                }
 
-    let reg = siteKey.replace(SITE_ID + "_", "");
+                const hasAnyCheckIn = visitor.sessions && visitor.sessions.some(s => s.checkIn);
+                
+                if (!hasAnyCheckIn) {
+                    keterangan += " | Belum pernah melakukan check-in";
+                } else {
+                    const isCurrentlyInside = visitor.currentStatus === "IN";
+                    if (isCurrentlyInside) {
+                        keterangan += " | Sedang berada di dalam area";
+                    } else {
+                        keterangan += " | Sudah check-out";
+                    }
+                }
+
                 if (visitor.sessions && visitor.sessions.length > 0) {
                     visitor.sessions.forEach((session, idx) => {
                         const checkInDate = session.checkIn ? new Date(session.checkIn) : null;
                         const checkOutDate = session.checkOut ? new Date(session.checkOut) : null;
-                        const formatDateTime = (date) => { if(!date) return "-"; const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); const h = String(date.getHours()).padStart(2, '0'); const mi = String(date.getMinutes()).padStart(2, '0'); const s = String(date.getSeconds()).padStart(2, '0'); return `${y}-${m}-${d} ${h}:${mi}:${s}`; };
-                        let durationText = "-"; let statusText = "IN PROGRESS";
-                        if (session.checkIn && session.checkOut) { const durationMinutes = Math.floor((session.checkOut - session.checkIn) / 60000); durationText = durationMinutes.toString(); statusText = "COMPLETED"; }
-                        else if (session.checkIn && !session.checkOut) { durationText = "IN PROGRESS"; statusText = "IN PROGRESS"; }
-                        dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": idx + 1, "Check-In": formatDateTime(checkInDate), "Check-Out": formatDateTime(checkOutDate), "Durasi (menit)": durationText, "Status": statusText, "Masa Berlaku": visitor.expDate || "-", "Keterangan": "-" });
-                } else { dataForExcel.push({ "Nama": visitor.nama, "No. Registrasi": reg, "Perusahaan": visitor.perusahaan, "Kategori": visitor.kategori, "Tujuan": visitor.tujuan, "PIC": visitor.pic, "Departemen": visitor.dept, "Sesi Ke": "-", "Check-In": "-", "Check-Out": "-", "Durasi (menit)": "-", "Status": "TERDAFTAR (Belum ada aktivitas)", "Masa Berlaku": visitor.expDate || "-", "Keterangan": "-" });
+                        
+                        const formatDateTime = (date) => {
+                            if (!date) return "-";
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            const d = String(date.getDate()).padStart(2, '0');
+                            const h = String(date.getHours()).padStart(2, '0');
+                            const mi = String(date.getMinutes()).padStart(2, '0');
+                            const s = String(date.getSeconds()).padStart(2, '0');
+                            return `${y}-${m}-${d} ${h}:${mi}:${s}`;
+                        };
+
+                        let durationText = "-";
+                        let statusText = "IN PROGRESS";
+                        let sessionKeterangan = keterangan;
+
+                        if (session.checkIn && session.checkOut) {
+                            const durationMinutes = Math.floor((session.checkOut - session.checkIn) / 60000);
+                            durationText = durationMinutes.toString();
+                            statusText = "COMPLETED";
+                            sessionKeterangan += ` | Durasi kunjungan: ${durationMinutes} menit`;
+                        } else if (session.checkIn && !session.checkOut) {
+                            durationText = "IN PROGRESS";
+                            statusText = "IN PROGRESS";
+                            const durationMinutes = Math.floor((now - session.checkIn) / 60000);
+                            sessionKeterangan += ` | Sedang berkunjung (${durationMinutes} menit berjalan)`;
+                        }
+
+                        dataForExcel.push({
+                            "Nama": visitor.nama || "-",
+                            "No. Registrasi": reg,
+                            "Perusahaan": visitor.perusahaan || "-",
+                            "Kategori": visitor.kategori || "UMUM",
+                            "Tujuan": visitor.tujuan || "-",
+                            "PIC": visitor.pic || "-",
+                            "Departemen": visitor.dept || "-",
+                            "Sesi Ke": idx + 1,
+                            "Check-In": formatDateTime(checkInDate),
+                            "Check-Out": formatDateTime(checkOutDate),
+                            "Durasi (menit)": durationText,
+                            "Status Sesi": statusText,
+                            "Masa Berlaku QR": masaBerlakuStatus,
+                            "Tanggal Kadaluarsa": visitor.expDate || "-",
+                            "Keterangan": sessionKeterangan
+                        });
+                    });
+                } else {
+                    dataForExcel.push({
+                        "Nama": visitor.nama || "-",
+                        "No. Registrasi": reg,
+                        "Perusahaan": visitor.perusahaan || "-",
+                        "Kategori": visitor.kategori || "UMUM",
+                        "Tujuan": visitor.tujuan || "-",
+                        "PIC": visitor.pic || "-",
+                        "Departemen": visitor.dept || "-",
+                        "Sesi Ke": "-",
+                        "Check-In": "-",
+                        "Check-Out": "-",
+                        "Durasi (menit)": "-",
+                        "Status Sesi": "TERDAFTAR (Belum ada aktivitas)",
+                        "Masa Berlaku QR": masaBerlakuStatus,
+                        "Tanggal Kadaluarsa": visitor.expDate || "-",
+                        "Keterangan": keterangan + " | Belum melakukan scan QR"
+                    });
+                }
+            });
+
+            dataForExcel.sort((a, b) => (a["Nama"] || "").localeCompare(b["Nama"] || ""));
+
             const ws = XLSX.utils.json_to_sheet(dataForExcel);
+            
+            ws['!cols'] = [
+                {wch:25}, {wch:18}, {wch:20}, {wch:12}, {wch:20},
+                {wch:15}, {wch:15}, {wch:8}, {wch:20}, {wch:20},
+                {wch:15}, {wch:18}, {wch:18}, {wch:18}, {wch:35}
+            ];
+            
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "VMS_Audit_Log_Sessions");
-            XLSX.writeFile(wb, `VMS_Full_Report_${Date.now()}.xlsx`);
-            toast("Excel berhasil di export", "success");
-        } catch(err){ console.error(err); toast("Export gagal", "error"); }
+            XLSX.utils.book_append_sheet(wb, ws, "VMS_Visitor_Report");
+            XLSX.writeFile(wb, `VMS_Report_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+            
+            toast("✅ Excel berhasil di export dengan kolom keterangan lengkap", "success");
+        } catch(err) { 
+            console.error("Export error:", err); 
+            toast("Export gagal: " + err.message, "error"); 
+        }
     };
     
     document.getElementById('backupAction').onclick = () => {
@@ -2278,43 +2389,8 @@ console.log("🔥 SUPER PATCH ACTIVE (CLEAN INJECT)");
 </script>
 
 <script>
-// ============================================================
-// 🔥 SYNC FUNCTION (PATCH ONLY)
-// ============================================================
-const SYNC_CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
-async function syncToCloud(payload) {
-    try {
-        if (!payload || !payload.deviceId) return;
-        if (!navigator.onLine) return;
 
-        const lastSync = localStorage.getItem("vms_last_sync");
-        const currentHash = JSON.stringify(payload);
-        if (lastSync === currentHash) return;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-
-        const res = await fetch(SYNC_CLOUD_URL + "/save", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal
-        });
-
-        clearTimeout(timeout);
-
-        if (res.ok) {
-            localStorage.setItem("vms_last_sync", currentHash);
-        }
-
-    } catch (err) {
-        console.warn("SYNC ERROR:", err.message);
-    }
-}
-</script>
 <script>
 const SYNC_CLOUD_URL = "https://vms3mode.sapammeded.workers.dev";
 
